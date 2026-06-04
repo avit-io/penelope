@@ -1,0 +1,8 @@
+# Agda build artefacts
+*.agdai
+MAlonzo/
+_build/
+*.hi
+*.o
+.direnv/
+.claude/

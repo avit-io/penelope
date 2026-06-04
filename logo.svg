@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 260">
+
+  <!-- ── TELAIO: montanti laterali ────────────────────────────── -->
+  <rect x="24"  y="20"  width="10" height="220" fill="#6B4423" rx="2"/>
+  <rect x="166" y="20"  width="10" height="220" fill="#6B4423" rx="2"/>
+  <rect x="24"  y="20"  width="2"  height="220" fill="#4A2E18"/>
+  <rect x="174" y="20"  width="2"  height="220" fill="#4A2E18"/>
+
+  <!-- ── TELAIO: traversa superiore (subbio) ──────────────────── -->
+  <rect x="20"  y="14"  width="160" height="14" fill="#6B4423" rx="2"/>
+  <rect x="20"  y="14"  width="160" height="3"  fill="#4A2E18"/>
+
+  <!-- ── TELAIO: traversa inferiore ───────────────────────────── -->
+  <rect x="20"  y="230" width="160" height="14" fill="#6B4423" rx="2"/>
+  <rect x="20"  y="241" width="160" height="3"  fill="#4A2E18"/>
+
+  <!-- ── FILI DI ORDITO: visibili sopra la tela (y 28→40) ────── -->
+  <line x1="50"  y1="28" x2="50"  y2="40" stroke="#6B2C5B" stroke-width="1.4"/>
+  <line x1="70"  y1="28" x2="70"  y2="40" stroke="#2C2A6B" stroke-width="1.4"/>
+  <line x1="90"  y1="28" x2="90"  y2="40" stroke="#6B2C5B" stroke-width="1.4"/>
+  <line x1="110" y1="28" x2="110" y2="40" stroke="#2C2A6B" stroke-width="1.4"/>
+  <line x1="130" y1="28" x2="130" y2="40" stroke="#6B2C5B" stroke-width="1.4"/>
+  <line x1="150" y1="28" x2="150" y2="40" stroke="#2C2A6B" stroke-width="1.4"/>
+
+  <!-- ── LA TELA: parte tessuta — la dashboard ────────────────── -->
+  <rect x="40" y="40" width="120" height="110" fill="#F2E9D8"/>
+
+  <!-- trama (weft) orizzontale — sottile, oro pallido -->
+  <g stroke="#D4A53A" stroke-width="0.5" opacity="0.55">
+    <line x1="40" y1="50"  x2="160" y2="50"/>
+    <line x1="40" y1="58"  x2="160" y2="58"/>
+    <line x1="40" y1="66"  x2="160" y2="66"/>
+    <line x1="40" y1="74"  x2="160" y2="74"/>
+    <line x1="40" y1="82"  x2="160" y2="82"/>
+    <line x1="40" y1="90"  x2="160" y2="90"/>
+    <line x1="40" y1="98"  x2="160" y2="98"/>
+    <line x1="40" y1="106" x2="160" y2="106"/>
+    <line x1="40" y1="114" x2="160" y2="114"/>
+    <line x1="40" y1="122" x2="160" y2="122"/>
+    <line x1="40" y1="130" x2="160" y2="130"/>
+    <line x1="40" y1="138" x2="160" y2="138"/>
+    <line x1="40" y1="146" x2="160" y2="146"/>
+  </g>
+
+  <!-- ordito visibile dentro la tela — molto chiaro, suggerisce il tessuto -->
+  <g stroke="#6B2C5B" stroke-width="0.4" opacity="0.25">
+    <line x1="50"  y1="40" x2="50"  y2="150"/>
+    <line x1="70"  y1="40" x2="70"  y2="150"/>
+    <line x1="90"  y1="40" x2="90"  y2="150"/>
+    <line x1="110" y1="40" x2="110" y2="150"/>
+    <line x1="130" y1="40" x2="130" y2="150"/>
+    <line x1="150" y1="40" x2="150" y2="150"/>
+  </g>
+
+  <!-- griglia della dashboard 2×2 ricamata in oro scuro -->
+  <line x1="100" y1="40"  x2="100" y2="150" stroke="#8B6914" stroke-width="1.2"/>
+  <line x1="40"  y1="95"  x2="160" y2="95"  stroke="#8B6914" stroke-width="1.2"/>
+
+  <!-- ── SIMBOLI tipo-teorici tessuti nelle quattro celle ─────── -->
+  <text x="70"  y="78" text-anchor="middle"
+        font-family="Georgia,'Times New Roman',serif"
+        font-size="16" font-weight="bold" fill="#2C1A4B">τ</text>
+  <text x="130" y="78" text-anchor="middle"
+        font-family="Georgia,'Times New Roman',serif"
+        font-size="14" font-weight="bold" fill="#2C1A4B">ℳ</text>
+  <text x="70"  y="133" text-anchor="middle"
+        font-family="Georgia,'Times New Roman',serif"
+        font-size="14" font-weight="bold" fill="#2C1A4B">⊢</text>
+  <text x="130" y="133" text-anchor="middle"
+        font-family="Georgia,'Times New Roman',serif"
+        font-size="15" font-weight="bold" fill="#2C1A4B">Σ</text>
+
+  <!-- ── FILI DI ORDITO sotto la tela, prima della navetta ───── -->
+  <line x1="50"  y1="150" x2="50"  y2="162" stroke="#6B2C5B" stroke-width="1.4"/>
+  <line x1="70"  y1="150" x2="70"  y2="162" stroke="#2C2A6B" stroke-width="1.4"/>
+  <line x1="90"  y1="150" x2="90"  y2="162" stroke="#6B2C5B" stroke-width="1.4"/>
+  <line x1="110" y1="150" x2="110" y2="162" stroke="#2C2A6B" stroke-width="1.4"/>
+  <line x1="130" y1="150" x2="130" y2="162" stroke="#6B2C5B" stroke-width="1.4"/>
+  <line x1="150" y1="150" x2="150" y2="162" stroke="#2C2A6B" stroke-width="1.4"/>
+
+  <!-- ── NAVETTA (shuttle) con filo d'oro ────────────────────── -->
+  <ellipse cx="100" cy="170" rx="26" ry="6.5" fill="#8B4423"/>
+  <ellipse cx="100" cy="169" rx="24" ry="5"   fill="#A8633A"/>
+  <ellipse cx="100" cy="169" rx="6"  ry="2.4" fill="#4A2E18"/>
+  <!-- filo che esce dalla navetta — oro, la trama -->
+  <line x1="74"  y1="170" x2="40"  y2="170" stroke="#D4A53A" stroke-width="1.4"/>
+  <line x1="126" y1="170" x2="160" y2="170" stroke="#D4A53A" stroke-width="1.4"/>
+
+  <!-- ── LA TELA DISFATTA: fili ondulati che scendono ────────── -->
+  <!-- Penelope la notte disfa quello che ha tessuto di giorno. -->
+  <path d="M 50  178 Q 53 188 50 200 Q 47 212 51 222 Q 54 228 50 230"
+        fill="none" stroke="#6B2C5B" stroke-width="1.2" opacity="0.7"/>
+  <path d="M 70  178 Q 73 188 70 200 Q 67 212 71 222 Q 74 228 70 230"
+        fill="none" stroke="#2C2A6B" stroke-width="1.2" opacity="0.7"/>
+  <path d="M 90  178 Q 93 188 90 200 Q 87 212 91 222 Q 94 228 90 230"
+        fill="none" stroke="#6B2C5B" stroke-width="1.2" opacity="0.7"/>
+  <path d="M 110 178 Q 113 188 110 200 Q 107 212 111 222 Q 114 228 110 230"
+        fill="none" stroke="#2C2A6B" stroke-width="1.2" opacity="0.7"/>
+  <path d="M 130 178 Q 133 188 130 200 Q 127 212 131 222 Q 134 228 130 230"
+        fill="none" stroke="#6B2C5B" stroke-width="1.2" opacity="0.7"/>
+  <path d="M 150 178 Q 153 188 150 200 Q 147 212 151 222 Q 154 228 150 230"
+        fill="none" stroke="#2C2A6B" stroke-width="1.2" opacity="0.7"/>
+
+  <!-- ── NOME ─────────────────────────────────────────────────── -->
+  <text x="100" y="256" text-anchor="middle"
+        font-family="Georgia,'Times New Roman',serif"
+        font-size="11" font-weight="bold" letter-spacing="4" fill="#2C1A4B">PENELOPE</text>
+</svg>
