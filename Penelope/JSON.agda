@@ -5,6 +5,7 @@ open import HenQL.Syntax
 open import HenQL.Print
 open import Penelope.Panel
 open import Penelope.Tiling
+open import Penelope.Variable
 open import Penelope.Dashboard
 
 open import Data.Nat      using (ℕ)
@@ -68,17 +69,66 @@ private
     walk tl (λ l → label (leftL l)) ++ "," ++ nl ++
     walk tr (λ l → label (rightL l))
 
+  -- ─── Template variables → blocco templating Grafana ───────────────
+
+  renderVarOption : String → String
+  renderVarOption v =
+    "{ \"text\": \"" ++ v ++ "\", \"value\": \"" ++ v ++ "\" }"
+
+  renderVarOptionsTail : List String → String
+  renderVarOptionsTail []       = ""
+  renderVarOptionsTail (v ∷ vs) =
+    ", " ++ renderVarOption v ++ renderVarOptionsTail vs
+
+  renderVarOptions : List⁺ String → String
+  renderVarOptions opts =
+    "[" ++ renderVarOption     (List⁺.head opts)
+        ++ renderVarOptionsTail (List⁺.tail opts)
+        ++ "]"
+
+  -- "frontend,backend,api" — comma-separated, formato Grafana "query"
+  -- field per le custom variables.
+  varQueryString : List⁺ String → String
+  varQueryString opts = go (List⁺.head opts) (List⁺.tail opts)
+    where
+      go : String → List String → String
+      go h []       = h
+      go h (v ∷ vs) = h ++ "," ++ go v vs
+
+  renderVariable : Variable → String
+  renderVariable v =
+    let opts = Variable.options v
+        h    = List⁺.head opts in
+    "{ \"name\": \"" ++ Variable.name v ++ "\""               ++
+    ", \"type\": \"custom\""                                  ++
+    ", \"query\": \"" ++ varQueryString opts ++ "\""          ++
+    ", \"current\": { \"text\": \"" ++ h ++ "\", \"value\": \"" ++ h ++ "\" }" ++
+    ", \"options\": " ++ renderVarOptions opts                ++
+    " }"
+
+  joinVars : List Variable → String
+  joinVars []           = ""
+  joinVars (v ∷ [])     = renderVariable v
+  joinVars (v ∷ w ∷ vs) = renderVariable v ++ ", " ++ joinVars (w ∷ vs)
+
+  renderTemplating : List Variable → String
+  renderTemplating vars = "{ \"list\": [" ++ joinVars vars ++ "] }"
+
 -- Render totale di una dashboard in Grafana JSON. I gridPos sono validi
 -- per costruzione: ogni cella ha w ≥ 1, h ≥ 1 (struttura del Tiling),
 -- è contenuta nel viewport (lemma `contained`), e non si sovrappone
--- alle altre (lemma `disjoint`).
+-- alle altre (lemma `disjoint`). Le template variables vengono emesse
+-- nel blocco "templating" — Grafana sostituisce `$varname` nelle query
+-- a runtime prima dell'invio a Prometheus.
 renderDashboard : {M : Model} → Dashboard M → String
 renderDashboard d =
-  let panels = walk (Dashboard.tiling d) (Dashboard.label d) in
+  let panels = walk (Dashboard.tiling d) (Dashboard.label d)
+      tmpl   = renderTemplating (Dashboard.variables d) in
     "{"                                                ++ nl ++
     "  \"title\": \"" ++ Dashboard.title d ++ "\","     ++ nl ++
     "  \"uid\": \"" ++ Dashboard.uid d ++ "\","         ++ nl ++
     "  \"schemaVersion\": 39,"                          ++ nl ++
+    "  \"templating\": " ++ tmpl ++ ","                 ++ nl ++
     "  \"panels\": ["                                   ++ nl ++
     panels                                              ++ nl ++
     "  ]"                                               ++ nl ++

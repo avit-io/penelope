@@ -3,13 +3,17 @@ module Penelope.Dashboard where
 open import Prometea.Core
 open import Penelope.Panel
 open import Penelope.Tiling
+open import Penelope.Variable
+open import Data.List   using (List)
 open import Data.String using (String)
 
 -- Una dashboard è la decorazione di un tassellamento con panel: geometria
--- (Tiling) + payload (label che etichetta ogni foglia con un AnyPanel).
+-- (Tiling) + payload (label che etichetta ogni foglia con un AnyPanel) +
+-- eventuali template variables.
 --
 -- Separazione netta: la geometria sta in Penelope.Tiling (slicing floor-
--- plan), Grafana sta nei panel. Dashboard è solo il container.
+-- plan), Grafana sta nei panel, le variabili sono placeholder che Grafana
+-- sostituisce a runtime. Dashboard è solo il container.
 --
 -- Per costruzione (lemmi disjoint + contained in Tiling):
 --   • tutti i panel occupano regioni DISGIUNTE del viewport;
@@ -20,8 +24,9 @@ open import Data.String using (String)
 record Dashboard (M : Model) : Set where
   constructor mkDashboard
   field
-    title    : String
-    uid      : String
-    viewport : Rect
-    tiling   : TilingOf viewport
-    label    : Leaf tiling → AnyPanel M
+    title     : String
+    uid       : String
+    variables : List Variable
+    viewport  : Rect
+    tiling    : TilingOf viewport
+    label     : Leaf tiling → AnyPanel M

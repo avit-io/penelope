@@ -20,10 +20,13 @@ open import Prometea.Core
 open import HenQL.Syntax
 open import Penelope.Panel
 open import Penelope.Tiling
+open import Penelope.Variable  public
+open import Penelope.Dashboard
 
 open import Data.Nat           using (ℕ; suc; _+_)
 open import Data.Product       using (_,_)
-open import Data.List.NonEmpty using ([_])
+open import Data.List          using (List; _∷_)
+open import Data.List.NonEmpty using (List⁺; [_])
 open import Data.String        using (String)
 
 -- ─────────────────────────────────────────────────────────────────────
@@ -91,3 +94,21 @@ _↔_ : ∀ {x y h wl wr}
     → Tiling x y (suc wl + suc wr) h
 _↔_ = vcut
 infixr 6 _↔_
+
+-- ─────────────────────────────────────────────────────────────────────
+-- Binder per template variables.
+--
+-- `forEach name opts (λ v → body)` lega `v : Variable` nel corpo,
+-- registra automaticamente la variabile nella dashboard prodotta. La
+-- dashboard interna costruisce il proprio campo `variables` (tipicamente
+-- vuoto), e forEach pre-pende la propria variabile. Componibile: più
+-- forEach in cascata danno una dashboard con tutte le variabili
+-- accumulate.
+-- ─────────────────────────────────────────────────────────────────────
+
+forEach : ∀ {M} → String → List⁺ String
+        → (Variable → Dashboard M) → Dashboard M
+forEach name opts f =
+  let v = mkVariable name opts
+      d = f v
+  in record d { variables = v ∷ Dashboard.variables d }

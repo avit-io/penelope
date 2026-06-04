@@ -211,10 +211,56 @@ decora (topL (rightL here)) = □ latenza
 decora (botL here)          = □ budget
 
 salute : Dashboard miaApp
-salute = mkDashboard "Salute API" "salute-api" viewport tela decora
+salute = mkDashboard "Salute API" "salute-api" [] viewport tela decora
+--                                              ↑
+--                                   nessuna template variable
 
 -- renderDashboard salute : String — Grafana JSON pronto.
 ```
+
+### Template variables
+
+`Variable` rappresenta un placeholder che Grafana sostituisce a runtime
+nelle query (tipologia MVP: `custom`, lista esplicita di valori). Si
+referenzia in PromQL con `varRef`:
+
+```agda
+serviceVar : Variable
+serviceVar = mkVariable "service"
+  ("frontend" ∷ "backend" ∷ "api" ∷ [])
+
+errori : Panel miaApp TimeSeries
+errori = timeseries "Errori / s"
+  (rate (range
+    ("http_requests_errors_total{service=\"" ++ varRef serviceVar ++ "\"}")
+    5))
+
+salute = mkDashboard "Salute API" "salute-api"
+                     (serviceVar ∷ [])    -- ← registrata nelle variables
+                     viewport tela decora
+```
+
+Il renderer emette il blocco `templating.list` nel JSON; Grafana mostra
+il selettore in alto alla dashboard e sostituisce `$service` con il
+valore scelto prima dell'invio della query a Prometheus.
+
+Il binder `forEach` lega la variabile localmente, utile quando i panel
+sono definiti inline e devono catturare la variabile:
+
+```agda
+salute = forEach "service" ("frontend" ∷ "backend" ∷ []) λ service →
+  mkDashboard "Salute API" "salute-api" [] viewport tela (decora-of service)
+  where
+    decora-of : Variable → Leaf tela → AnyPanel miaApp
+    decora-of v (topL (leftL here))  = □ (errori-of v)
+    -- ...
+    errori-of : Variable → Panel miaApp TimeSeries
+    errori-of v = timeseries "Errori / s"
+      (rate (range ("http_requests_errors_total{service=\"" ++ varRef v ++ "\"}") 5))
+```
+
+`forEach` pre-pende la variabile alla lista; più `forEach` in cascata
+le accumulano nella stessa dashboard.
 
 > Lo zucchero in `Penelope.Sugar` è interamente fatto di definizioni
 > sull'algebra esistente (riducono a `mkPanel`, `hcut`, `vcut`, `Σ._,_`).
@@ -242,9 +288,11 @@ penelope/
 │   ├── Tiling.agda      # GEOMETRIA — Rect · Tiling · Leaf · place ·
 │   │                    #   contained · disjoint (indipendente da Grafana)
 │   ├── Panel.agda       # PanelKind · queryTypeOf · Panel · AnyPanel
-│   ├── Dashboard.agda   # DECORAZIONE — viewport + tiling + label
-│   ├── JSON.agda        # renderDashboard — totale, gridPos da place
-│   └── Sugar.agda       # ZUCCHERO — □_ · timeseries/stat/... · ↕/↔
+│   ├── Variable.agda    # Variable · varRef (template variables custom)
+│   ├── Dashboard.agda   # DECORAZIONE — variables + viewport + tiling + label
+│   ├── JSON.agda        # renderDashboard — totale, gridPos da place,
+│   │                    #   templating.list emesso dalle variables
+│   └── Sugar.agda       # ZUCCHERO — □_ · timeseries/stat/... · ↕/↔ · forEach
 ├── Examples/
 │   └── Tela.agda        # esempio: tre panel, tassellamento, render JSON
 ├── penelope.agda-lib    # depend: standard-library prometea henql
@@ -277,9 +325,10 @@ HenQL.Print            ← prettyExpr : Expr M τ → String
 Penelope.Tiling        ← Rect · Tiling · Leaf · place · ⊆ · Disjoint
                          (livello geometrico, zero import Grafana)
 Penelope.Panel         ← PanelKind · Panel M k · AnyPanel M
-Penelope.Dashboard     ← Dashboard M (viewport + tiling + label)
-Penelope.JSON          ← renderDashboard → Grafana JSON
-Penelope.Sugar         ← □_ · timeseries/stat/gauge/table · ↕/↔
+Penelope.Variable      ← Variable · varRef (template variables custom)
+Penelope.Dashboard     ← Dashboard M (variables + viewport + tiling + label)
+Penelope.JSON          ← renderDashboard → Grafana JSON (con templating)
+Penelope.Sugar         ← □_ · timeseries/stat/gauge/table · ↕/↔ · forEach
                          (zucchero, riduce ai costruttori esistenti)
 ```
 
@@ -346,8 +395,11 @@ geometrici di `Tiling`, non da una verifica a runtime.
 
 In ordine di valore concreto:
 
-1. **Template variables** — il `templating` di Grafana come record tipato,
-   con sostituzione nei target delle query.
+1. **Template variables — tipologie oltre `custom`** — oggi `Variable`
+   espone solo la tipologia Grafana `custom` (lista esplicita di valori).
+   Da aggiungere: `query` (label_values via PromQL), `interval` (durate),
+   `constant`, `text`, `datasource`. Implementabili come somma sui
+   `VarSpec` senza toccare il render del blocco `templating`.
 2. **Datasource non-Prometheus** — Penelope oggi assume `prometheus`.
    Astrarre `Datasource` parallelo a `Model` per Loki, Tempo, ecc.
 3. **Layout proof come API standard** — oggi `renderDashboardCertified`
@@ -373,7 +425,13 @@ In ordine di valore concreto:
   bisogno di tipi annotati (`where`-clauses). Il livello `Sugar`
   function-based su un viewport (per il sogno "stile old Layout M")
   e i combinatori n-ari `rows` / `cols` per la decomposizione equa
-  vivono insieme alle template variables in roadmap.
+  vivono in roadmap.
+- **Template variables (custom MVP)** — `Variable` con `name` e
+  `options : List⁺ String`, registrata in `Dashboard.variables`, emessa
+  nel blocco `templating.list`. `varRef` produce `$varname` da iniettare
+  nelle stringhe PromQL. Binder `forEach` per legare la variabile nel
+  corpo della dashboard. Le tipologie Grafana oltre `custom` (`query`,
+  `interval`, `constant`, `text`, `datasource`) restano in roadmap.
 
 ---
 
