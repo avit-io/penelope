@@ -332,20 +332,24 @@ geometrici di `Tiling`, non da una verifica a runtime.
 
 In ordine di valore concreto:
 
-1. **`stack : List (Layout M) → Layout M`** — n-ario invece di nidificare
-   `above` / `beside`. Resta strutturalmente disgiunto perché ereditato
-   dalla decomposizione equa di un rettangolo.
-2. **Split pesati** — `above-w : ℕ → ℕ → Layout M → Layout M → Layout M`
-   per proporzioni non eque (es. 2/3 + 1/3). Le proporzioni nello shape,
-   non in una prova esterna.
-3. **Template variables** — il `templating` di Grafana come record tipato,
+1. **Template variables** — il `templating` di Grafana come record tipato,
    con sostituzione nei target delle query.
-4. **Datasource non-Prometheus** — Penelope oggi assume `prometheus`.
+2. **Datasource non-Prometheus** — Penelope oggi assume `prometheus`.
    Astrarre `Datasource` parallelo a `Model` per Loki, Tempo, ecc.
-5. **Layout proof come API standard** — oggi `renderDashboardCertified`
+3. **Layout proof come API standard** — oggi `renderDashboardCertified`
    espone `Σ (List Rect) (All ⊆ × Pairwise Disjoint)` come ritorno
    esplicito. La prossima iterazione è promuovere quella variante a
    `renderDashboard` di default e deprecare la versione non-certificata.
+
+### Già implementati come derivazioni geometriche
+
+- **`vstack` / `hstack` n-ari** — fold di `hcut` / `vcut` su una pila
+  tipata di sotto-Tilings. Disgiuntezza ereditata: il Tiling risultante
+  è un BSP regolare, i lemmi `disjoint` e `contained` si applicano senza
+  prove ulteriori.
+- **Split pesati** — già esprimibili nei costruttori base scegliendo
+  `(ht hb)` con la proporzione desiderata. Es. `hcut {ht = 9} {hb = 5}`
+  per ~63% / 37% su altezza 16. Le proporzioni vivono nello shape.
 
 ---
 

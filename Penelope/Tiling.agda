@@ -359,3 +359,42 @@ placedRects-disjoint {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) =
                                     (leftRightPart-Disjoint x y h wl wr))
                    (placedRects-contained tr))
               (placedRects-contained tl)
+
+-- ─────────────────────────────────────────────────────────────────────
+-- Costruzioni derivate: stack n-ario come fold di hcut/vcut.
+--
+-- vstack è una pila verticale di n Tilings (n ≥ 1), affiancati lungo y
+-- con stesse x e w. hstack è la simmetrica lungo x.
+--
+-- Disgiuntezza ereditata: il Tiling risultante è un albero regolare di
+-- hcut/vcut, quindi `contained`, `disjoint`, `placedRects-contained` e
+-- `placedRects-disjoint` valgono senza prove ulteriori — sono lemmi
+-- universalmente quantificati sulla classe degli slicing floorplan.
+--
+-- I "split pesati" (es. taglio a 2/3 dell'altezza) sono già esprimibili
+-- nei costruttori base scegliendo (ht hb) con la proporzione desiderata,
+-- es. hcut {ht = 9} {hb = 5} per ~63% / 37% su h=16. Nessuna costruzione
+-- ad hoc serve: le proporzioni vivono nello shape, non in una prova.
+-- ─────────────────────────────────────────────────────────────────────
+
+data VStack (x w : ℕ) : (y h : ℕ) → Set where
+  vone  : ∀ {y h} → Tiling x y w (suc h) → VStack x w y (suc h)
+  vmore : ∀ {y h₁ h-rest}
+        → Tiling x y w (suc h₁)
+        → VStack x w (y + suc h₁) (suc h-rest)
+        → VStack x w y (suc h₁ + suc h-rest)
+
+vstack : ∀ {x y w h} → VStack x w y h → Tiling x y w h
+vstack (vone t)       = t
+vstack (vmore t rest) = hcut t (vstack rest)
+
+data HStack (y h : ℕ) : (x w : ℕ) → Set where
+  hone  : ∀ {x w} → Tiling x y (suc w) h → HStack y h x (suc w)
+  hmore : ∀ {x w₁ w-rest}
+        → Tiling x y (suc w₁) h
+        → HStack y h (x + suc w₁) (suc w-rest)
+        → HStack y h x (suc w₁ + suc w-rest)
+
+hstack : ∀ {x y w h} → HStack y h x w → Tiling x y w h
+hstack (hone t)       = t
+hstack (hmore t rest) = vcut t (hstack rest)
