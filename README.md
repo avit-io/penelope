@@ -174,44 +174,53 @@ open import Penelope.Panel
 open import Penelope.Tiling
 open import Penelope.Dashboard
 open import Penelope.JSON
+open import Penelope.Sugar     -- timeseries/stat/... · □_ · ↕/↔
 
 miaApp : Model
 miaApp = record { Time = ℕ ; Val = Float ; Series = String }
 
 errori : Panel miaApp TimeSeries
-errori = mkPanel "Errori / s"
-  [ sumBy ("job" ∷ []) (rate (range "http_requests_errors_total" 5)) ]
+errori = timeseries "Errori / s"
+  (sumBy ("job" ∷ []) (rate (range "http_requests_errors_total" 5)))
 
 latenza : Panel miaApp TimeSeries
-latenza = mkPanel "Latenza"
-  [ rate (range "http_request_duration_seconds_sum" 5) ]
+latenza = timeseries "Latenza"
+  (rate (range "http_request_duration_seconds_sum" 5))
 
 budget : Panel miaApp Stat
-budget = mkPanel "Budget consumato" [ scalar "0.42" ]
+budget = stat "Budget consumato" (scalar "0.42")
 
--- Geometria: tassellamento del viewport 24×16.
+-- Geometria: tassellamento del viewport 24×16, con infix ↕/↔.
 viewport : Rect
 viewport = mkRect 0 0 24 16
 
 tela : TilingOf viewport
-tela = hcut top bot
+tela = (left ↔ right) ↕ bot
   where
-    top : Tiling 0 0 24 8
-    top = vcut (tile {0} {0} {12} {8}) (tile {12} {0} {12} {8})
-    bot : Tiling 0 8 24 8
-    bot = tile
+    left  : Tiling 0 0 12 8
+    left  = tile
+    right : Tiling 12 0 12 8
+    right = tile
+    bot   : Tiling 0 8 24 8
+    bot   = tile
 
--- Decorazione: ogni foglia → un panel.
+-- Decorazione: ogni foglia → un panel, kind recuperato dal tipo via □_.
 decora : Leaf tela → AnyPanel miaApp
-decora (topL (leftL here))  = TimeSeries , errori
-decora (topL (rightL here)) = TimeSeries , latenza
-decora (botL here)          = Stat , budget
+decora (topL (leftL here))  = □ errori
+decora (topL (rightL here)) = □ latenza
+decora (botL here)          = □ budget
 
 salute : Dashboard miaApp
 salute = mkDashboard "Salute API" "salute-api" viewport tela decora
 
 -- renderDashboard salute : String — Grafana JSON pronto.
 ```
+
+> Lo zucchero in `Penelope.Sugar` è interamente fatto di definizioni
+> sull'algebra esistente (riducono a `mkPanel`, `hcut`, `vcut`, `Σ._,_`).
+> Nessun nuovo data type, nessuna prova ulteriore: gli invarianti di
+> `Tiling` e `Panel` sono ereditati. Se volessi controllo fine, puoi
+> ignorare `Sugar` e scrivere `mkPanel`/`hcut`/`vcut` direttamente.
 
 ### Come sviluppatore di Penelope
 
@@ -234,7 +243,8 @@ penelope/
 │   │                    #   contained · disjoint (indipendente da Grafana)
 │   ├── Panel.agda       # PanelKind · queryTypeOf · Panel · AnyPanel
 │   ├── Dashboard.agda   # DECORAZIONE — viewport + tiling + label
-│   └── JSON.agda        # renderDashboard — totale, gridPos da place
+│   ├── JSON.agda        # renderDashboard — totale, gridPos da place
+│   └── Sugar.agda       # ZUCCHERO — □_ · timeseries/stat/... · ↕/↔
 ├── Examples/
 │   └── Tela.agda        # esempio: tre panel, tassellamento, render JSON
 ├── penelope.agda-lib    # depend: standard-library prometea henql
@@ -269,6 +279,8 @@ Penelope.Tiling        ← Rect · Tiling · Leaf · place · ⊆ · Disjoint
 Penelope.Panel         ← PanelKind · Panel M k · AnyPanel M
 Penelope.Dashboard     ← Dashboard M (viewport + tiling + label)
 Penelope.JSON          ← renderDashboard → Grafana JSON
+Penelope.Sugar         ← □_ · timeseries/stat/gauge/table · ↕/↔
+                         (zucchero, riduce ai costruttori esistenti)
 ```
 
 Penelope dipende da HenQL per le query e da Prometea per `Model`. Non sa
@@ -352,6 +364,16 @@ In ordine di valore concreto:
 - **Split pesati** — già esprimibili nei costruttori base scegliendo
   `(ht hb)` con la proporzione desiderata. Es. `hcut {ht = 9} {hb = 5}`
   per ~63% / 37% su altezza 16. Le proporzioni vivono nello shape.
+- **Zucchero in `Penelope.Sugar`** — `□_`, costruttori per-kind
+  (`timeseries`/`stat`/`gauge`/`table`), e infissi `↕`/`↔` come alias di
+  `hcut`/`vcut`. Tutto fatto di definizioni sull'algebra: nessun nuovo
+  data type, invarianti ereditati. Il single-expression senza
+  annotazioni *non* funziona — l'unificatore di Agda non inverte
+  `suc n + suc n ≡ 16` per `n` libero — quindi i bracci dei cut hanno
+  bisogno di tipi annotati (`where`-clauses). Il livello `Sugar`
+  function-based su un viewport (per il sogno "stile old Layout M")
+  e i combinatori n-ari `rows` / `cols` per la decomposizione equa
+  vivono insieme alle template variables in roadmap.
 
 ---
 
