@@ -8,19 +8,16 @@ open import Data.List   using (List)
 open import Data.String using (String)
 
 -- Una dashboard è la decorazione di un tassellamento con panel: geometria
--- (Tiling) + payload (label che etichetta ogni foglia con un AnyPanel) +
--- eventuali template variables.
+-- (Tiling) + payload (panel nei tile) + eventuali template variables.
 --
--- Separazione netta: la geometria sta in Penelope.Tiling (slicing floor-
--- plan), Grafana sta nei panel, le variabili sono placeholder che Grafana
--- sostituisce a runtime. Dashboard è solo il container.
+-- Tiling è content-polimorfo (`Tiling C x y w h`); qui si istanzia
+-- `C := AnyPanel M`. Tutti i panel della dashboard condividono lo stesso
+-- modello M (coerenza del modello: phantom da AnyPanel M).
 --
--- Per costruzione (lemmi disjoint + contained in Tiling):
+-- Per costruzione (lemmi disjoint + contained in Tiling, universali su C):
 --   • tutti i panel occupano regioni DISGIUNTE del viewport;
 --   • nessun panel esce dal viewport;
 --   • ogni cella ha w ≥ 1 e h ≥ 1 (suc-indexed nei figli di hcut/vcut).
---
--- Tutti i panel condividono lo stesso modello M (phantom da AnyPanel M).
 record Dashboard (M : Model) : Set where
   constructor mkDashboard
   field
@@ -28,5 +25,4 @@ record Dashboard (M : Model) : Set where
     uid       : String
     variables : List Variable
     viewport  : Rect
-    tiling    : TilingOf viewport
-    label     : Leaf tiling → AnyPanel M
+    tiling    : TilingOf (AnyPanel M) viewport

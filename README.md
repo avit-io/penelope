@@ -55,60 +55,56 @@ errore di unificazione del typechecker. Tutte le target di un panel
 condividono lo stesso PromType (overlay di metriche compatibili). La
 spec è nello shape, non nei commenti.
 
-### Due livelli: geometria intrinseca, decorazione separata
+### Due livelli: geometria content-polimorfa + decorazione che istanzia
 
 **Livello geometrico** (`Penelope.Tiling`) — completamente indipendente
-da Grafana. Un tassellamento è indicizzato sul rettangolo che tassella:
+da Grafana. Tiling è parametrico su un contenuto astratto `C : Set`,
+mai sul `Model`: `tile : C → Tiling C x y w h`. Niente import di
+`Penelope.Panel` / `HenQL.Syntax` / `Prometea.Core`.
 
 ```agda
-data Tiling : (x y w h : ℕ) → Set where
-  tile : ∀ {x y w h} → Tiling x y w h
+data Tiling (C : Set) : (x y w h : ℕ) → Set where
+  tile : ∀ {x y w h} → C → Tiling C x y w h
   hcut : ∀ {x y w} {ht hb : ℕ}
-       → Tiling x y w (suc ht)
-       → Tiling x (y + suc ht) w (suc hb)
-       → Tiling x y w (suc ht + suc hb)
+       → Tiling C x y w (suc ht)
+       → Tiling C x (y + suc ht) w (suc hb)
+       → Tiling C x y w (suc ht + suc hb)
   vcut : ∀ {x y h} {wl wr : ℕ}
-       → Tiling x y (suc wl) h
-       → Tiling (x + suc wl) y (suc wr) h
-       → Tiling x y (suc wl + suc wr) h
+       → Tiling C x y (suc wl) h
+       → Tiling C (x + suc wl) y (suc wr) h
+       → Tiling C x y (suc wl + suc wr) h
 ```
 
 Le sotto-dimensioni dei figli sono `suc`-indicizzate, quindi **min-size
-≥ 1 è definizionale**: nessuna cella può avere `w = 0` o `h = 0`. I
-rettangoli figli sono *calcolati dagli indici*, non scelti a parte.
+≥ 1 è definizionale**: nessuna cella può avere `w = 0` o `h = 0`.
 
-**Classe coperta**: i tassellamenti rappresentabili sono gli **slicing
-floorplan** (partizioni guillotine) — partizioni del rettangolo per
-tagli completi orizzontali o verticali ricorsivi. Il pinwheel a 5
-rettangoli e altri tassellamenti non-guillotine **non sono esprimibili**.
-È una limitazione strutturale, non un buco di copertura.
+**Classe coperta**: gli **slicing floorplan** (partizioni guillotine).
+Il pinwheel a 5 rettangoli non è esprimibile — limitazione strutturale.
 
-I lemmi geometrici sono dimostrati **una volta** nel modulo `Tiling`:
+I lemmi sono dimostrati **una volta** nel modulo `Tiling`, universali su `C`:
 
 ```agda
-contained : (t : Tiling x y w h) (l : Leaf t) → place t l ⊆ mkRect x y w h
-disjoint  : (t : Tiling x y w h) (l₁ l₂ : Leaf t)
+contained : (t : Tiling C x y w h) (l : Leaf t) → place t l ⊆ mkRect x y w h
+disjoint  : (t : Tiling C x y w h) (l₁ l₂ : Leaf t)
           → l₁ ≢ l₂ → Disjoint (place t l₁) (place t l₂)
 ```
 
-**Livello decorazione** (`Penelope.Dashboard`) — etichetta le foglie del
-tassellamento con panel. Container style: shape + payload:
+**Livello decorazione** (`Penelope.Dashboard`) — istanzia
+`C := AnyPanel M`. La coerenza del modello vive qui, non nella geometria.
 
 ```agda
 record Dashboard (M : Model) : Set where
   field
     viewport : Rect
-    tiling   : TilingOf viewport
-    label    : Leaf tiling → AnyPanel M
+    tiling   : TilingOf (AnyPanel M) viewport
 ```
 
-La decorazione **non tocca** la geometria. Cambiare il tassellamento
-non richiede toccare le query; cambiare i panel non richiede ridimostrare
-la disgiunzione. I due assi sono ortogonali.
+Il payload è dentro il tile (`tile (□ panel)`) — niente più funzione
+label separata. La geometria resta poligrafica: `↕`/`↔` non menzionano
+M, e widget/rows/cols (Sugar) restano polimorfi in C.
 
-Il renderer deriva i `gridPos` da `place` del tassellamento — non più
-da un walk ad albero conflato. È totale e i `gridPos` emessi sono validi
-**per costruzione** (nessun `h = 0` possibile):
+Il renderer deriva i `gridPos` dagli implicit del tile, è totale, e i
+gridPos emessi sono validi **per costruzione**:
 
 ```agda
 renderDashboard : {M : Model} → Dashboard M → String
@@ -190,28 +186,22 @@ latenza = timeseries "Latenza"
 budget : Panel miaApp Stat
 budget = stat "Budget consumato" (scalar "0.42")
 
--- Geometria: tassellamento del viewport 24×16, con infix ↕/↔.
+-- Geometria con payload: tile carica direttamente l'AnyPanel.
 viewport : Rect
 viewport = mkRect 0 0 24 16
 
-tela : TilingOf viewport
+tela : TilingOf (AnyPanel miaApp) viewport
 tela = (left ↔ right) ↕ bot
   where
-    left  : Tiling 0 0 12 8
-    left  = tile
-    right : Tiling 12 0 12 8
-    right = tile
-    bot   : Tiling 0 8 24 8
-    bot   = tile
-
--- Decorazione: ogni foglia → un panel, kind recuperato dal tipo via □_.
-decora : Leaf tela → AnyPanel miaApp
-decora (topL (leftL here))  = □ errori
-decora (topL (rightL here)) = □ latenza
-decora (botL here)          = □ budget
+    left  : Tiling (AnyPanel miaApp) 0 0 12 8
+    left  = tile (□ errori)
+    right : Tiling (AnyPanel miaApp) 12 0 12 8
+    right = tile (□ latenza)
+    bot   : Tiling (AnyPanel miaApp) 0 8 24 8
+    bot   = tile (□ budget)
 
 salute : Dashboard miaApp
-salute = mkDashboard "Salute API" "salute-api" [] viewport tela decora
+salute = mkDashboard "Salute API" "salute-api" [] viewport tela
 --                                              ↑
 --                                   nessuna template variable
 
@@ -237,7 +227,7 @@ errori = timeseries "Errori / s"
 
 salute = mkDashboard "Salute API" "salute-api"
                      (serviceVar ∷ [])    -- ← registrata nelle variables
-                     viewport tela decora
+                     viewport tela
 ```
 
 Il renderer emette il blocco `templating.list` nel JSON; Grafana mostra
@@ -285,16 +275,20 @@ agda Examples/Tela.agda    # typecheck dell'esempio
 ```
 penelope/
 ├── Penelope/
-│   ├── Tiling.agda      # GEOMETRIA — Rect · Tiling · Leaf · place ·
-│   │                    #   contained · disjoint (indipendente da Grafana)
-│   ├── Panel.agda       # PanelKind · queryTypeOf · Panel · AnyPanel
+│   ├── Tiling.agda      # GEOMETRIA — Tiling (C : Set), Leaf, place,
+│   │                    #   contained, disjoint, VStack/HStack
+│   │                    #   (content-polimorfo, no import di Grafana)
+│   ├── Panel.agda       # PanelKind (TimeSeries/Stat/Gauge/BarGauge/Table)
+│   │                    #   queryTypeOf · Panel · AnyPanel
 │   ├── Variable.agda    # Variable · varRef (template variables custom)
-│   ├── Dashboard.agda   # DECORAZIONE — variables + viewport + tiling + label
-│   ├── JSON.agda        # renderDashboard — totale, gridPos da place,
-│   │                    #   templating.list emesso dalle variables
-│   └── Sugar.agda       # ZUCCHERO — □_ · timeseries/stat/... · ↕/↔ · forEach
+│   ├── Dashboard.agda   # DECORAZIONE — istanzia C := AnyPanel M
+│   ├── JSON.agda        # renderDashboard — gridPos dal walk del Tiling
+│   └── Sugar.agda       # ZUCCHERO — □_ · per-kind · ↕/↔ · Widget ·
+│                        #   rows/cols n-ari · stackH/stackW · forEach
 ├── Examples/
-│   └── Tela.agda        # esempio: tre panel, tassellamento, render JSON
+│   ├── Tela.agda        # esempio base: 3 panel, tassellamento, render
+│   ├── RED.agda         # RED — N servizi × (rate, errors, duration)
+│   └── SLO.agda         # SLO — N servizi × (SLI, budget, burn, trend)
 ├── penelope.agda-lib    # depend: standard-library prometea henql
 └── flake.nix            # packages.lib · lib.mkShell · devShells.default
 ```
@@ -322,14 +316,15 @@ HenQL.Print            ← prettyExpr : Expr M τ → String
      │
      │  open import HenQL.Syntax / HenQL.Print
      ▼
-Penelope.Tiling        ← Rect · Tiling · Leaf · place · ⊆ · Disjoint
+Penelope.Tiling        ← Tiling (C : Set), content-polimorfo
                          (livello geometrico, zero import Grafana)
-Penelope.Panel         ← PanelKind · Panel M k · AnyPanel M
+Penelope.Panel         ← PanelKind (TimeSeries/Stat/Gauge/BarGauge/Table)
+                         queryTypeOf · Panel M k · AnyPanel M
 Penelope.Variable      ← Variable · varRef (template variables custom)
-Penelope.Dashboard     ← Dashboard M (variables + viewport + tiling + label)
+Penelope.Dashboard     ← Dashboard M (istanzia C := AnyPanel M)
 Penelope.JSON          ← renderDashboard → Grafana JSON (con templating)
-Penelope.Sugar         ← □_ · timeseries/stat/gauge/table · ↕/↔ · forEach
-                         (zucchero, riduce ai costruttori esistenti)
+Penelope.Sugar         ← □_ · per-kind · ↕/↔ · Widget · rows/cols ·
+                         forEach (zucchero, riduce ai costruttori)
 ```
 
 Penelope dipende da HenQL per le query e da Prometea per `Model`. Non sa
@@ -432,6 +427,15 @@ In ordine di valore concreto:
   nelle stringhe PromQL. Binder `forEach` per legare la variabile nel
   corpo della dashboard. Le tipologie Grafana oltre `custom` (`query`,
   `interval`, `constant`, `text`, `datasource`) restano in roadmap.
+- **Widget e combinatori n-ari** — `Widget C w h = ∀ {x y} → Tiling C x y w h`
+  (position-independent). `rows`/`cols` su `Vec` decompongono equamente
+  con `stackH`/`stackW` (formulate in suc-forma definizionale per
+  permettere ad Agda di unificare `t ↕ rows ...` senza rewrite). Esempi
+  reali in `Examples/RED.agda` (4 servizi × rate/errors/duration) e
+  `Examples/SLO.agda` (4 servizi × SLI/budget/burn/trend).
+- **HenQL esteso** — `histogramQuantile`, `_÷_`, `_-_`, `litVec`,
+  `toScalar` necessari per gli SLO. Pretty-print emette PromQL
+  standard (`scalar()`, `histogram_quantile()`, ecc.).
 
 ---
 

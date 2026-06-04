@@ -24,6 +24,7 @@ private
   panelTypeOf TimeSeries = "timeseries"
   panelTypeOf Stat       = "stat"
   panelTypeOf Gauge      = "gauge"
+  panelTypeOf BarGauge   = "bargauge"
   panelTypeOf Table      = "table"
 
   renderTarget : {M : Model} {τ : PromType} → Expr M τ → String
@@ -52,22 +53,15 @@ private
     "      \"targets\": " ++ renderTargets tgs                            ++ nl ++
     "    }"
 
-  -- Walk del Tiling: ad ogni foglia, il Rect è derivato dagli indici del
-  -- sotto-Tiling (place ≅ ricostruzione del Rect dalle implicite). Le
-  -- virgole fra panel sono iniettate dai nodi interni: N foglie → N-1
-  -- nodi → N-1 virgole, esattamente quante servono.
+  -- Walk del Tiling content-polimorfo, istanziato a C := AnyPanel M.
+  -- Ad ogni tile, il payload è il panel da renderizzare; il gridPos è
+  -- derivato dagli implicit (x y w h) del tile.
   walk : {M : Model} {x y w h : ℕ}
-       → (t : Tiling x y w h)
-       → (Leaf t → AnyPanel M)
-       → String
-  walk {x = x} {y = y} {w = w} {h = h} tile label =
-    renderPanel (mkRect x y w h) (label here)
-  walk (hcut tt tb) label =
-    walk tt (λ l → label (topL l)) ++ "," ++ nl ++
-    walk tb (λ l → label (botL l))
-  walk (vcut tl tr) label =
-    walk tl (λ l → label (leftL l)) ++ "," ++ nl ++
-    walk tr (λ l → label (rightL l))
+       → Tiling (AnyPanel M) x y w h → String
+  walk {x = x} {y = y} {w = w} {h = h} (tile p) =
+    renderPanel (mkRect x y w h) p
+  walk (hcut tt tb) = walk tt ++ "," ++ nl ++ walk tb
+  walk (vcut tl tr) = walk tl ++ "," ++ nl ++ walk tr
 
   -- ─── Template variables → blocco templating Grafana ───────────────
 
@@ -86,8 +80,6 @@ private
         ++ renderVarOptionsTail (List⁺.tail opts)
         ++ "]"
 
-  -- "frontend,backend,api" — comma-separated, formato Grafana "query"
-  -- field per le custom variables.
   varQueryString : List⁺ String → String
   varQueryString opts = go (List⁺.head opts) (List⁺.tail opts)
     where
@@ -115,14 +107,12 @@ private
   renderTemplating vars = "{ \"list\": [" ++ joinVars vars ++ "] }"
 
 -- Render totale di una dashboard in Grafana JSON. I gridPos sono validi
--- per costruzione: ogni cella ha w ≥ 1, h ≥ 1 (struttura del Tiling),
--- è contenuta nel viewport (lemma `contained`), e non si sovrappone
--- alle altre (lemma `disjoint`). Le template variables vengono emesse
--- nel blocco "templating" — Grafana sostituisce `$varname` nelle query
--- a runtime prima dell'invio a Prometheus.
+-- per costruzione: ogni cella ha w ≥ 1, h ≥ 1, è contenuta nel viewport,
+-- e non si sovrappone alle altre (lemmi `contained`/`disjoint` in Tiling).
+-- Le template variables vengono emesse nel blocco "templating".
 renderDashboard : {M : Model} → Dashboard M → String
 renderDashboard d =
-  let panels = walk (Dashboard.tiling d) (Dashboard.label d)
+  let panels = walk (Dashboard.tiling d)
       tmpl   = renderTemplating (Dashboard.variables d) in
     "{"                                                ++ nl ++
     "  \"title\": \"" ++ Dashboard.title d ++ "\","     ++ nl ++
@@ -135,9 +125,8 @@ renderDashboard d =
     "}"
 
 -- ─────────────────────────────────────────────────────────────────────
--- Render "certificato": il JSON insieme alla prova che i rettangoli
--- piazzati sono contenuti nel viewport e pairwise disgiunti. Permette
--- ai consumer downstream di ragionare sull'output, non solo sull'input.
+-- Render "certificato": JSON + Σ con prove list-level di contenimento e
+-- disgiunzione.
 -- ─────────────────────────────────────────────────────────────────────
 
 renderDashboardCertified

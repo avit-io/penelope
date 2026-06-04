@@ -12,6 +12,7 @@ data PanelKind : Set where
   TimeSeries : PanelKind
   Stat       : PanelKind
   Gauge      : PanelKind
+  BarGauge   : PanelKind
   Table      : PanelKind
 
 -- Il PromType che ogni kind esige.
@@ -20,6 +21,7 @@ queryTypeOf : PanelKind → PromType
 queryTypeOf TimeSeries = InstantVector
 queryTypeOf Stat       = Scalar
 queryTypeOf Gauge      = Scalar
+queryTypeOf BarGauge   = Scalar
 queryTypeOf Table      = InstantVector
 
 -- Un panel sotto il modello M, di un certo kind k.

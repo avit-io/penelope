@@ -3,26 +3,19 @@ module Penelope.Tiling where
 -- ╔════════════════════════════════════════════════════════════════════╗
 -- ║  Livello geometrico — tassellamenti slicing del rettangolo.        ║
 -- ║                                                                    ║
--- ║  Modulo INDIPENDENTE da Grafana: nessun import di Model, PromType, ║
--- ║  PanelKind. Solo aritmetica di rettangoli e tagli a ghigliottina.  ║
+-- ║  Modulo INDIPENDENTE da Grafana: zero import di Model, PromType,   ║
+-- ║  PanelKind. Tiling è parametrico su un contenuto astratto C : Set: ║
+-- ║  `tile : C → Tiling C x y w h`. La coerenza del modello vive       ║
+-- ║  altrove (Penelope.Dashboard istanzia `C := AnyPanel M`); qui si   ║
+-- ║  parla solo di rettangoli e tagli a ghigliottina.                  ║
 -- ║                                                                    ║
--- ║  La classe di tassellamenti rappresentata è quella degli SLICING   ║
--- ║  FLOORPLAN (partizioni guillotine): ogni partizione del rettangolo ║
--- ║  si ottiene per tagli completi orizzontali o verticali ricorsivi.  ║
--- ║  Il pinwheel a 5 rettangoli NON è rappresentabile, perché richiede ║
--- ║  un taglio non-guillotine.                                         ║
+-- ║  La classe rappresentata sono gli SLICING FLOORPLAN (partizioni    ║
+-- ║  guillotine). Il pinwheel a 5 rettangoli non è esprimibile.        ║
 -- ║                                                                    ║
--- ║  RAPPRESENTAZIONE. Tiling è indicizzato sui 4 campi ℕ (x, y, w, h) ║
--- ║  anziché su Rect (l'unificazione di indici-record si blocca in     ║
--- ║  Agda 2.8). Un cut è parametrizzato dalle SOTTO-DIMENSIONI dei due ║
--- ║  figli (ht hb per hcut, wl wr per vcut), suc-indicizzate: il padre ║
--- ║  ha altezza (suc ht + suc hb), entrambi i figli hanno altezza ≥ 1. ║
--- ║  L'invariante min-size dei figli è DEFINIZIONALE.                  ║
--- ║                                                                    ║
--- ║  La posizione del taglio è equivalente a una Fin (h ∸ 1): scegliere║
--- ║  k : Fin (h ∸ 1) corrisponde a scegliere (ht hb) con suc ht +      ║
--- ║  suc hb = h. La presentazione suc-additiva evita l'uso di ∸, che   ║
--- ║  non è iniettivo e impedisce l'unificazione dei pattern.           ║
+-- ║  RAPPRESENTAZIONE. Tiling è indicizzato sui 4 ℕ (x y w h). Un cut  ║
+-- ║  è parametrizzato dalle sotto-dimensioni dei figli, suc-indexed:   ║
+-- ║  il padre ha altezza (suc ht + suc hb), entrambi i figli ≥ 1.      ║
+-- ║  Min-size DEFINIZIONALE.                                           ║
 -- ╚════════════════════════════════════════════════════════════════════╝
 
 open import Data.Nat
@@ -39,7 +32,7 @@ open import Data.List.Relation.Unary.All
   using (All; []; _∷_)
 
 -- ─────────────────────────────────────────────────────────────────────
--- Rect: rettangolo posizionato. Esposto come record per la decorazione.
+-- Rect: rettangolo posizionato.
 -- ─────────────────────────────────────────────────────────────────────
 
 record Rect : Set where
@@ -48,61 +41,66 @@ record Rect : Set where
 open Rect public
 
 -- ─────────────────────────────────────────────────────────────────────
--- Tiling: slicing floorplan intrinseco, indicizzato sui 4 campi ℕ.
---
--- Per hcut: ht, hb sono le altezze-meno-uno dei due figli; il padre ha
--- altezza (suc ht + suc hb). Entrambi i figli hanno altezza ≥ 1 PER
--- COSTRUZIONE (struttura suc). Per vcut: simmetrico su w.
+-- Tiling: slicing floorplan, content-polimorfo. `tile` porta un valore
+-- di contenuto C; hcut/vcut combinano sotto-Tilings.
 -- ─────────────────────────────────────────────────────────────────────
 
-data Tiling : (x y w h : ℕ) → Set where
-  tile : ∀ {x y w h} → Tiling x y w h
+data Tiling (C : Set) : (x y w h : ℕ) → Set where
+  tile : ∀ {x y w h} → C → Tiling C x y w h
   hcut : ∀ {x y w} {ht hb : ℕ}
-       → Tiling x y w (suc ht)
-       → Tiling x (y + suc ht) w (suc hb)
-       → Tiling x y w (suc ht + suc hb)
+       → Tiling C x y w (suc ht)
+       → Tiling C x (y + suc ht) w (suc hb)
+       → Tiling C x y w (suc ht + suc hb)
   vcut : ∀ {x y h} {wl wr : ℕ}
-       → Tiling x y (suc wl) h
-       → Tiling (x + suc wl) y (suc wr) h
-       → Tiling x y (suc wl + suc wr) h
+       → Tiling C x y (suc wl) h
+       → Tiling C (x + suc wl) y (suc wr) h
+       → Tiling C x y (suc wl + suc wr) h
 
--- Surface wrapper: un Tiling "del" rettangolo r (per la decorazione).
-TilingOf : Rect → Set
-TilingOf r = Tiling (x r) (y r) (w r) (h r)
+-- Surface wrapper: un Tiling "del" rettangolo r con contenuto C.
+TilingOf : (C : Set) → Rect → Set
+TilingOf C r = Tiling C (x r) (y r) (w r) (h r)
 
 -- ─────────────────────────────────────────────────────────────────────
--- Leaf: indirizzo di una foglia (cella) dentro un Tiling.
+-- Leaf: indirizzo di una foglia (cella).
 -- ─────────────────────────────────────────────────────────────────────
 
-data Leaf : ∀ {x y w h} → Tiling x y w h → Set where
-  here   : ∀ {x y w h} → Leaf (tile {x} {y} {w} {h})
+data Leaf {C : Set} : ∀ {x y w h} → Tiling C x y w h → Set where
+  here   : ∀ {x y w h} {c : C} → Leaf (tile {x = x} {y = y} {w = w} {h = h} c)
   topL   : ∀ {x y w} {ht hb : ℕ}
-             {tt : Tiling x y w (suc ht)}
-             {tb : Tiling x (y + suc ht) w (suc hb)}
+             {tt : Tiling C x y w (suc ht)}
+             {tb : Tiling C x (y + suc ht) w (suc hb)}
          → Leaf tt → Leaf (hcut tt tb)
   botL   : ∀ {x y w} {ht hb : ℕ}
-             {tt : Tiling x y w (suc ht)}
-             {tb : Tiling x (y + suc ht) w (suc hb)}
+             {tt : Tiling C x y w (suc ht)}
+             {tb : Tiling C x (y + suc ht) w (suc hb)}
          → Leaf tb → Leaf (hcut tt tb)
   leftL  : ∀ {x y h} {wl wr : ℕ}
-             {tl : Tiling x y (suc wl) h}
-             {tr : Tiling (x + suc wl) y (suc wr) h}
+             {tl : Tiling C x y (suc wl) h}
+             {tr : Tiling C (x + suc wl) y (suc wr) h}
          → Leaf tl → Leaf (vcut tl tr)
   rightL : ∀ {x y h} {wl wr : ℕ}
-             {tl : Tiling x y (suc wl) h}
-             {tr : Tiling (x + suc wl) y (suc wr) h}
+             {tl : Tiling C x y (suc wl) h}
+             {tr : Tiling C (x + suc wl) y (suc wr) h}
          → Leaf tr → Leaf (vcut tl tr)
 
 -- ─────────────────────────────────────────────────────────────────────
--- place: piazza una foglia, restituendo il Rect che occupa.
+-- place: ogni foglia conosce il proprio rettangolo (derivato dagli ℕ).
+-- contentAt: estrae il contenuto C di una foglia.
 -- ─────────────────────────────────────────────────────────────────────
 
-place : ∀ {x y w h} (t : Tiling x y w h) → Leaf t → Rect
-place {x} {y} {w} {h} tile here = mkRect x y w h
-place (hcut tt _ ) (topL l)     = place tt l
-place (hcut _  tb) (botL l)     = place tb l
-place (vcut tl _ ) (leftL l)    = place tl l
-place (vcut _  tr) (rightL l)   = place tr l
+place : ∀ {C x y w h} (t : Tiling C x y w h) → Leaf t → Rect
+place {x = x} {y = y} {w = w} {h = h} (tile _) here = mkRect x y w h
+place (hcut tt _ ) (topL  l) = place tt l
+place (hcut _  tb) (botL  l) = place tb l
+place (vcut tl _ ) (leftL l) = place tl l
+place (vcut _  tr) (rightL l) = place tr l
+
+contentAt : ∀ {C x y w h} (t : Tiling C x y w h) → Leaf t → C
+contentAt (tile c)   here     = c
+contentAt (hcut tt _ ) (topL  l) = contentAt tt l
+contentAt (hcut _  tb) (botL  l) = contentAt tb l
+contentAt (vcut tl _ ) (leftL l) = contentAt tl l
+contentAt (vcut _  tr) (rightL l) = contentAt tr l
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Containment: r ⊆ r' significa "r è contenuto in r'".
@@ -172,23 +170,23 @@ rightPart-⊆ x y h wl wr = record
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Lemma: ogni foglia piazzata è contenuta nel rettangolo del Tiling.
+-- (Universalmente quantificato su C : Set.)
 -- ─────────────────────────────────────────────────────────────────────
 
-contained : ∀ {x y w h} (t : Tiling x y w h) (l : Leaf t)
+contained : ∀ {C x y w h} (t : Tiling C x y w h) (l : Leaf t)
           → place t l ⊆ mkRect x y w h
-contained                  tile          here     = ⊆-refl
-contained {x} {y} {w} (hcut {ht = ht} {hb = hb} tt _ ) (topL l) =
+contained (tile _) here = ⊆-refl
+contained {x = x} {y = y} {w = w} (hcut {ht = ht} {hb = hb} tt _ ) (topL l) =
   ⊆-trans (contained tt l) (topPart-⊆ x y w ht hb)
-contained {x} {y} {w} (hcut {ht = ht} {hb = hb} _  tb) (botL l) =
+contained {x = x} {y = y} {w = w} (hcut {ht = ht} {hb = hb} _  tb) (botL l) =
   ⊆-trans (contained tb l) (botPart-⊆ x y w ht hb)
-contained {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl _ ) (leftL l) =
+contained {x = x} {y = y} {h = h} (vcut {wl = wl} {wr = wr} tl _ ) (leftL l) =
   ⊆-trans (contained tl l) (leftPart-⊆ x y h wl wr)
-contained {x} {y} {h = h} (vcut {wl = wl} {wr = wr} _  tr) (rightL l) =
+contained {x = x} {y = y} {h = h} (vcut {wl = wl} {wr = wr} _  tr) (rightL l) =
   ⊆-trans (contained tr l) (rightPart-⊆ x y h wl wr)
 
 -- ─────────────────────────────────────────────────────────────────────
--- Disjointness: due rettangoli sono disgiunti se uno è interamente a
--- sinistra, a destra, sopra o sotto l'altro (axis-aligned).
+-- Disjointness e lemma disjoint sui Tiling.
 -- ─────────────────────────────────────────────────────────────────────
 
 data Disjoint : Rect → Rect → Set where
@@ -203,7 +201,6 @@ Disjoint-sym (rightOf p) = leftOf  p
 Disjoint-sym (above   p) = below   p
 Disjoint-sym (below   p) = above   p
 
--- Se a ⊆ b e c ⊆ d, e b e d sono disgiunti, allora a e c lo sono.
 Disjoint-mono : ∀ {a b c d}
               → a ⊆ b → c ⊆ d → Disjoint b d → Disjoint a c
 Disjoint-mono ab cd (leftOf  p) =
@@ -215,7 +212,6 @@ Disjoint-mono ab cd (above   p) =
 Disjoint-mono ab cd (below   p) =
   below   (≤-trans (⊆-yb cd) (≤-trans p (⊆-y ab)))
 
--- I due figli di hcut/vcut sono disgiunti per costruzione (≤-refl).
 topBotPart-Disjoint : ∀ x y w ht hb
                     → Disjoint (mkRect x y w (suc ht))
                                (mkRect x (y + suc ht) w (suc hb))
@@ -226,36 +222,29 @@ leftRightPart-Disjoint : ∀ x y h wl wr
                                   (mkRect (x + suc wl) y (suc wr) h)
 leftRightPart-Disjoint x y h wl wr = leftOf ≤-refl
 
--- ─────────────────────────────────────────────────────────────────────
--- Lemma: due foglie distinte di un Tiling occupano rettangoli disgiunti.
--- ─────────────────────────────────────────────────────────────────────
-
-disjoint : ∀ {x y w h} (t : Tiling x y w h) (l₁ l₂ : Leaf t)
+disjoint : ∀ {C x y w h} (t : Tiling C x y w h) (l₁ l₂ : Leaf t)
          → l₁ ≢ l₂ → Disjoint (place t l₁) (place t l₂)
 
--- tile: l'unica foglia è here. l₁ = l₂ = here → contraddice l₁ ≢ l₂.
-disjoint tile here here neq = ⊥-elim (neq refl)
+disjoint (tile _) here here neq = ⊥-elim (neq refl)
 
--- hcut: 4 combinazioni di (topL/botL).
 disjoint (hcut tt tb) (topL l₁) (topL l₂) neq =
   disjoint tt l₁ l₂ (λ eq → neq (cong topL eq))
-disjoint {x} {y} {w} (hcut {ht = ht} {hb = hb} tt tb) (topL l₁) (botL l₂) _ =
+disjoint {x = x} {y = y} {w = w} (hcut {ht = ht} {hb = hb} tt tb) (topL l₁) (botL l₂) _ =
   Disjoint-mono (contained tt l₁) (contained tb l₂)
                 (topBotPart-Disjoint x y w ht hb)
-disjoint {x} {y} {w} (hcut {ht = ht} {hb = hb} tt tb) (botL l₁) (topL l₂) _ =
+disjoint {x = x} {y = y} {w = w} (hcut {ht = ht} {hb = hb} tt tb) (botL l₁) (topL l₂) _ =
   Disjoint-sym
     (Disjoint-mono (contained tt l₂) (contained tb l₁)
                    (topBotPart-Disjoint x y w ht hb))
 disjoint (hcut tt tb) (botL l₁) (botL l₂) neq =
   disjoint tb l₁ l₂ (λ eq → neq (cong botL eq))
 
--- vcut: 4 combinazioni di (leftL/rightL).
 disjoint (vcut tl tr) (leftL l₁) (leftL l₂) neq =
   disjoint tl l₁ l₂ (λ eq → neq (cong leftL eq))
-disjoint {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) (leftL l₁) (rightL l₂) _ =
+disjoint {x = x} {y = y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) (leftL l₁) (rightL l₂) _ =
   Disjoint-mono (contained tl l₁) (contained tr l₂)
                 (leftRightPart-Disjoint x y h wl wr)
-disjoint {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) (rightL l₁) (leftL l₂) _ =
+disjoint {x = x} {y = y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) (rightL l₁) (leftL l₂) _ =
   Disjoint-sym
     (Disjoint-mono (contained tl l₂) (contained tr l₁)
                    (leftRightPart-Disjoint x y h wl wr))
@@ -263,16 +252,13 @@ disjoint (vcut tl tr) (rightL l₁) (rightL l₂) neq =
   disjoint tr l₁ l₂ (λ eq → neq (cong rightL eq))
 
 -- ─────────────────────────────────────────────────────────────────────
--- Enumerazione delle foglie e packaging list-level delle prove.
---
--- placedRects è definita per ricorsione strutturale (non passa per
--- map ∘ leaves): le prove list-level seguono per induzione diretta.
+-- Enumerazione delle foglie e packaging list-level (poly in C).
 -- ─────────────────────────────────────────────────────────────────────
 
-placedRects : ∀ {x y w h} → Tiling x y w h → List Rect
-placedRects {x} {y} {w} {h} tile = mkRect x y w h ∷ []
-placedRects (hcut tt tb)        = placedRects tt ++ placedRects tb
-placedRects (vcut tl tr)        = placedRects tl ++ placedRects tr
+placedRects : ∀ {C x y w h} → Tiling C x y w h → List Rect
+placedRects {x = x} {y = y} {w = w} {h = h} (tile _) = mkRect x y w h ∷ []
+placedRects (hcut tt tb) = placedRects tt ++ placedRects tb
+placedRects (vcut tl tr) = placedRects tl ++ placedRects tr
 
 private
   All-++ : ∀ {A : Set} {P : A → Set} {xs ys : List A}
@@ -285,27 +271,19 @@ private
   All-mapAll f []       = []
   All-mapAll f (p ∷ ps) = f p ∷ All-mapAll f ps
 
--- ─────────────────────────────────────────────────────────────────────
--- Lemma list-level: ogni rettangolo piazzato è contenuto nel viewport.
--- ─────────────────────────────────────────────────────────────────────
-
-placedRects-contained : ∀ {x y w h} (t : Tiling x y w h)
+placedRects-contained : ∀ {C x y w h} (t : Tiling C x y w h)
                       → All (_⊆ mkRect x y w h) (placedRects t)
-placedRects-contained tile = ⊆-refl ∷ []
-placedRects-contained {x} {y} {w} (hcut {ht = ht} {hb = hb} tt tb) =
+placedRects-contained (tile _) = ⊆-refl ∷ []
+placedRects-contained {x = x} {y = y} {w = w} (hcut {ht = ht} {hb = hb} tt tb) =
   All-++ (All-mapAll (λ p → ⊆-trans p (topPart-⊆ x y w ht hb))
                      (placedRects-contained tt))
          (All-mapAll (λ p → ⊆-trans p (botPart-⊆ x y w ht hb))
                      (placedRects-contained tb))
-placedRects-contained {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) =
+placedRects-contained {x = x} {y = y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) =
   All-++ (All-mapAll (λ p → ⊆-trans p (leftPart-⊆ x y h wl wr))
                      (placedRects-contained tl))
          (All-mapAll (λ p → ⊆-trans p (rightPart-⊆ x y h wl wr))
                      (placedRects-contained tr))
-
--- ─────────────────────────────────────────────────────────────────────
--- Pairwise: ogni elemento è in relazione R con tutti i successivi.
--- ─────────────────────────────────────────────────────────────────────
 
 data Pairwise {A : Set} (R : A → A → Set) : List A → Set where
   []  : Pairwise R []
@@ -320,18 +298,10 @@ private
   Pairwise-++ (rs ∷ pwXs) pwYs (rsY ∷ rsYs) =
     All-++ rs rsY ∷ Pairwise-++ pwXs pwYs rsYs
 
--- ─────────────────────────────────────────────────────────────────────
--- Lemma list-level: i rettangoli piazzati sono pairwise disgiunti.
---
--- Costruzione diretta dall'induzione sul Tiling, usando Disjoint-mono
--- per propagare la disgiunzione strutturale dei due figli di hcut/vcut
--- ai rettangoli contenuti nei sotto-tassellamenti.
--- ─────────────────────────────────────────────────────────────────────
-
-placedRects-disjoint : ∀ {x y w h} (t : Tiling x y w h)
+placedRects-disjoint : ∀ {C x y w h} (t : Tiling C x y w h)
                      → Pairwise Disjoint (placedRects t)
-placedRects-disjoint tile = [] ∷ []
-placedRects-disjoint {x} {y} {w} (hcut {ht = ht} {hb = hb} tt tb) =
+placedRects-disjoint (tile _) = [] ∷ []
+placedRects-disjoint {x = x} {y = y} {w = w} (hcut {ht = ht} {hb = hb} tt tb) =
   Pairwise-++ (placedRects-disjoint tt)
               (placedRects-disjoint tb)
               cross
@@ -345,7 +315,7 @@ placedRects-disjoint {x} {y} {w} (hcut {ht = ht} {hb = hb} tt tb) =
                                     (topBotPart-Disjoint x y w ht hb))
                    (placedRects-contained tb))
               (placedRects-contained tt)
-placedRects-disjoint {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) =
+placedRects-disjoint {x = x} {y = y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) =
   Pairwise-++ (placedRects-disjoint tl)
               (placedRects-disjoint tr)
               cross
@@ -359,42 +329,3 @@ placedRects-disjoint {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) =
                                     (leftRightPart-Disjoint x y h wl wr))
                    (placedRects-contained tr))
               (placedRects-contained tl)
-
--- ─────────────────────────────────────────────────────────────────────
--- Costruzioni derivate: stack n-ario come fold di hcut/vcut.
---
--- vstack è una pila verticale di n Tilings (n ≥ 1), affiancati lungo y
--- con stesse x e w. hstack è la simmetrica lungo x.
---
--- Disgiuntezza ereditata: il Tiling risultante è un albero regolare di
--- hcut/vcut, quindi `contained`, `disjoint`, `placedRects-contained` e
--- `placedRects-disjoint` valgono senza prove ulteriori — sono lemmi
--- universalmente quantificati sulla classe degli slicing floorplan.
---
--- I "split pesati" (es. taglio a 2/3 dell'altezza) sono già esprimibili
--- nei costruttori base scegliendo (ht hb) con la proporzione desiderata,
--- es. hcut {ht = 9} {hb = 5} per ~63% / 37% su h=16. Nessuna costruzione
--- ad hoc serve: le proporzioni vivono nello shape, non in una prova.
--- ─────────────────────────────────────────────────────────────────────
-
-data VStack (x w : ℕ) : (y h : ℕ) → Set where
-  vone  : ∀ {y h} → Tiling x y w (suc h) → VStack x w y (suc h)
-  vmore : ∀ {y h₁ h-rest}
-        → Tiling x y w (suc h₁)
-        → VStack x w (y + suc h₁) (suc h-rest)
-        → VStack x w y (suc h₁ + suc h-rest)
-
-vstack : ∀ {x y w h} → VStack x w y h → Tiling x y w h
-vstack (vone t)       = t
-vstack (vmore t rest) = hcut t (vstack rest)
-
-data HStack (y h : ℕ) : (x w : ℕ) → Set where
-  hone  : ∀ {x w} → Tiling x y (suc w) h → HStack y h x (suc w)
-  hmore : ∀ {x w₁ w-rest}
-        → Tiling x y (suc w₁) h
-        → HStack y h (x + suc w₁) (suc w-rest)
-        → HStack y h x (suc w₁ + suc w-rest)
-
-hstack : ∀ {x y w h} → HStack y h x w → Tiling x y w h
-hstack (hone t)       = t
-hstack (hmore t rest) = vcut t (hstack rest)

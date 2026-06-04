@@ -14,20 +14,15 @@ open import Data.String        using (String; _++_)
 open import Data.List          using (_∷_; [])
 open import Data.List.NonEmpty using (_∷_)
 
--- Un modello concreto: timestamp interi, valori float, serie come stringhe.
+-- Un modello concreto.
 miaApp : Model
 miaApp = record { Time = ℕ ; Val = Float ; Series = String }
 
--- ── Una template variable: `$service`, scelta fra tre valori. ──────────
--- Grafana sostituisce `$service` con il valore scelto a runtime prima
--- dell'invio della query a Prometheus.
-
+-- ── Template variable: $service ──
 serviceVar : Variable
-serviceVar = mkVariable "service"
-  ("frontend" ∷ "backend" ∷ "api" ∷ [])
+serviceVar = mkVariable "service" ("frontend" ∷ "backend" ∷ "api" ∷ [])
 
--- ── Tre panel, tre kind, target che usano la variabile via `varRef`. ──
-
+-- ── Tre panel con target tipate ──
 errori : Panel miaApp TimeSeries
 errori = timeseries "Errori / s"
   (sumBy ("job" ∷ [])
@@ -44,37 +39,28 @@ latenza = timeseries "Latenza"
 budget : Panel miaApp Stat
 budget = stat "Budget consumato" (scalar "0.42")
 
--- ── Geometria: tassellamento 24×16, con infix ↕/↔. ─────────────────────
+-- ── Geometria con payload: tile carica direttamente l'AnyPanel ──
+-- (left ↔ right) ↕ bot. left/right sono 12×8, bot è 24×8 → viewport 24×16.
 
 viewport : Rect
 viewport = mkRect 0 0 24 16
 
-tela : TilingOf viewport
+tela : TilingOf (AnyPanel miaApp) viewport
 tela = (left ↔ right) ↕ bot
   where
-    left  : Tiling 0 0 12 8
-    left  = tile
-    right : Tiling 12 0 12 8
-    right = tile
-    bot   : Tiling 0 8 24 8
-    bot   = tile
-
--- ── Decorazione: ogni foglia → un panel, kind recuperato da □_. ────────
-
-decora : Leaf tela → AnyPanel miaApp
-decora (topL (leftL here))  = □ errori
-decora (topL (rightL here)) = □ latenza
-decora (botL here)          = □ budget
-
--- ── Dashboard con `serviceVar` registrata fra le variabili. ────────────
+    left  : Tiling (AnyPanel miaApp) 0 0 12 8
+    left  = tile (□ errori)
+    right : Tiling (AnyPanel miaApp) 12 0 12 8
+    right = tile (□ latenza)
+    bot   : Tiling (AnyPanel miaApp) 0 8 24 8
+    bot   = tile (□ budget)
 
 salute : Dashboard miaApp
 salute = mkDashboard "Salute API" "salute-api"
                      (serviceVar ∷ [])
-                     viewport tela decora
+                     viewport tela
 
--- Il JSON Grafana corrispondente, con il blocco `templating.list`
--- emesso da renderTemplating in JSON.agda.
+-- Il JSON Grafana corrispondente.
 json : String
 json = renderDashboard salute
 
