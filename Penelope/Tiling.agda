@@ -33,6 +33,10 @@ open import Data.Empty
   using (⊥-elim)
 open import Relation.Binary.PropositionalEquality
   using (_≡_; _≢_; refl; cong)
+open import Data.List
+  using (List; []; _∷_; _++_)
+open import Data.List.Relation.Unary.All
+  using (All; []; _∷_)
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Rect: rettangolo posizionato. Esposto come record per la decorazione.
@@ -257,3 +261,101 @@ disjoint {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) (rightL l₁) (leftL l
                    (leftRightPart-Disjoint x y h wl wr))
 disjoint (vcut tl tr) (rightL l₁) (rightL l₂) neq =
   disjoint tr l₁ l₂ (λ eq → neq (cong rightL eq))
+
+-- ─────────────────────────────────────────────────────────────────────
+-- Enumerazione delle foglie e packaging list-level delle prove.
+--
+-- placedRects è definita per ricorsione strutturale (non passa per
+-- map ∘ leaves): le prove list-level seguono per induzione diretta.
+-- ─────────────────────────────────────────────────────────────────────
+
+placedRects : ∀ {x y w h} → Tiling x y w h → List Rect
+placedRects {x} {y} {w} {h} tile = mkRect x y w h ∷ []
+placedRects (hcut tt tb)        = placedRects tt ++ placedRects tb
+placedRects (vcut tl tr)        = placedRects tl ++ placedRects tr
+
+private
+  All-++ : ∀ {A : Set} {P : A → Set} {xs ys : List A}
+         → All P xs → All P ys → All P (xs ++ ys)
+  All-++ []       qs = qs
+  All-++ (p ∷ ps) qs = p ∷ All-++ ps qs
+
+  All-mapAll : ∀ {A : Set} {P Q : A → Set} {xs : List A}
+             → (∀ {x} → P x → Q x) → All P xs → All Q xs
+  All-mapAll f []       = []
+  All-mapAll f (p ∷ ps) = f p ∷ All-mapAll f ps
+
+-- ─────────────────────────────────────────────────────────────────────
+-- Lemma list-level: ogni rettangolo piazzato è contenuto nel viewport.
+-- ─────────────────────────────────────────────────────────────────────
+
+placedRects-contained : ∀ {x y w h} (t : Tiling x y w h)
+                      → All (_⊆ mkRect x y w h) (placedRects t)
+placedRects-contained tile = ⊆-refl ∷ []
+placedRects-contained {x} {y} {w} (hcut {ht = ht} {hb = hb} tt tb) =
+  All-++ (All-mapAll (λ p → ⊆-trans p (topPart-⊆ x y w ht hb))
+                     (placedRects-contained tt))
+         (All-mapAll (λ p → ⊆-trans p (botPart-⊆ x y w ht hb))
+                     (placedRects-contained tb))
+placedRects-contained {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) =
+  All-++ (All-mapAll (λ p → ⊆-trans p (leftPart-⊆ x y h wl wr))
+                     (placedRects-contained tl))
+         (All-mapAll (λ p → ⊆-trans p (rightPart-⊆ x y h wl wr))
+                     (placedRects-contained tr))
+
+-- ─────────────────────────────────────────────────────────────────────
+-- Pairwise: ogni elemento è in relazione R con tutti i successivi.
+-- ─────────────────────────────────────────────────────────────────────
+
+data Pairwise {A : Set} (R : A → A → Set) : List A → Set where
+  []  : Pairwise R []
+  _∷_ : ∀ {x xs} → All (R x) xs → Pairwise R xs → Pairwise R (x ∷ xs)
+
+private
+  Pairwise-++ : ∀ {A : Set} {R : A → A → Set} {xs ys : List A}
+              → Pairwise R xs → Pairwise R ys
+              → All (λ x → All (R x) ys) xs
+              → Pairwise R (xs ++ ys)
+  Pairwise-++ []          pwYs []            = pwYs
+  Pairwise-++ (rs ∷ pwXs) pwYs (rsY ∷ rsYs) =
+    All-++ rs rsY ∷ Pairwise-++ pwXs pwYs rsYs
+
+-- ─────────────────────────────────────────────────────────────────────
+-- Lemma list-level: i rettangoli piazzati sono pairwise disgiunti.
+--
+-- Costruzione diretta dall'induzione sul Tiling, usando Disjoint-mono
+-- per propagare la disgiunzione strutturale dei due figli di hcut/vcut
+-- ai rettangoli contenuti nei sotto-tassellamenti.
+-- ─────────────────────────────────────────────────────────────────────
+
+placedRects-disjoint : ∀ {x y w h} (t : Tiling x y w h)
+                     → Pairwise Disjoint (placedRects t)
+placedRects-disjoint tile = [] ∷ []
+placedRects-disjoint {x} {y} {w} (hcut {ht = ht} {hb = hb} tt tb) =
+  Pairwise-++ (placedRects-disjoint tt)
+              (placedRects-disjoint tb)
+              cross
+  where
+    cross : All (λ r₁ → All (Disjoint r₁) (placedRects tb)) (placedRects tt)
+    cross = All-mapAll
+              (λ r₁⊆top →
+                 All-mapAll
+                   (λ r₂⊆bot →
+                      Disjoint-mono r₁⊆top r₂⊆bot
+                                    (topBotPart-Disjoint x y w ht hb))
+                   (placedRects-contained tb))
+              (placedRects-contained tt)
+placedRects-disjoint {x} {y} {h = h} (vcut {wl = wl} {wr = wr} tl tr) =
+  Pairwise-++ (placedRects-disjoint tl)
+              (placedRects-disjoint tr)
+              cross
+  where
+    cross : All (λ r₁ → All (Disjoint r₁) (placedRects tr)) (placedRects tl)
+    cross = All-mapAll
+              (λ r₁⊆l →
+                 All-mapAll
+                   (λ r₂⊆r →
+                      Disjoint-mono r₁⊆l r₂⊆r
+                                    (leftRightPart-Disjoint x y h wl wr))
+                   (placedRects-contained tr))
+              (placedRects-contained tl)

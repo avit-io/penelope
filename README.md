@@ -301,6 +301,20 @@ Cinque invarianti, **nessuna prova attaccata, nessun runtime check**.
 parziale, nessuna eccezione runtime. La tela tessuta è sempre JSON
 sintatticamente valido, con `gridPos` validi per costruzione.
 
+Per i consumer che vogliono ragionare sull'output:
+
+```agda
+renderDashboardCertified
+  : (d : Dashboard M)
+  → String
+  × Σ (List Rect) (λ rs → All (_⊆ viewport d) rs × Pairwise Disjoint rs)
+```
+
+restituisce, insieme al JSON, la lista dei `Rect` piazzati con due
+prove list-level: tutti contenuti nel viewport (`All ⊆`), pairwise
+disgiunti (`Pairwise Disjoint`). Le prove sono derivate dai lemmi
+geometrici di `Tiling`, non da una verifica a runtime.
+
 ### Cosa NON è garantito
 
 - **Tassellamenti non-guillotine** — Penelope copre gli slicing floorplan.
@@ -328,9 +342,10 @@ In ordine di valore concreto:
    con sostituzione nei target delle query.
 4. **Datasource non-Prometheus** — Penelope oggi assume `prometheus`.
    Astrarre `Datasource` parallelo a `Model` per Loki, Tempo, ecc.
-5. **Layout proof esposto** — fare emergere `Σ (List GridPos) (Disjoint ∧ InCanvas)`
-   come output di `walk`, così i consumer downstream possono ragionare
-   sull'output e non solo sull'input.
+5. **Layout proof come API standard** — oggi `renderDashboardCertified`
+   espone `Σ (List Rect) (All ⊆ × Pairwise Disjoint)` come ritorno
+   esplicito. La prossima iterazione è promuovere quella variante a
+   `renderDashboard` di default e deprecare la versione non-certificata.
 
 ---
 

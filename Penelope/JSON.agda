@@ -10,7 +10,9 @@ open import Penelope.Dashboard
 open import Data.Nat      using (ℕ)
 open import Data.Nat.Show using () renaming (show to showℕ)
 open import Data.String   using (String; _++_)
-open import Data.Product  using (_,_)
+open import Data.Product  using (Σ; _,_; _×_)
+open import Data.List     using (List)
+open import Data.List.Relation.Unary.All using (All)
 
 private
   nl : String
@@ -68,3 +70,20 @@ renderDashboard d =
     panels                                              ++ nl ++
     "  ]"                                               ++ nl ++
     "}"
+
+-- ─────────────────────────────────────────────────────────────────────
+-- Render "certificato": il JSON insieme alla prova che i rettangoli
+-- piazzati sono contenuti nel viewport e pairwise disgiunti. Permette
+-- ai consumer downstream di ragionare sull'output, non solo sull'input.
+-- ─────────────────────────────────────────────────────────────────────
+
+renderDashboardCertified
+  : {M : Model} (d : Dashboard M)
+  → String
+  × Σ (List Rect) (λ rs →
+      All (_⊆ Dashboard.viewport d) rs × Pairwise Disjoint rs)
+renderDashboardCertified d =
+  renderDashboard d
+  , placedRects (Dashboard.tiling d)
+  , placedRects-contained (Dashboard.tiling d)
+  , placedRects-disjoint  (Dashboard.tiling d)
