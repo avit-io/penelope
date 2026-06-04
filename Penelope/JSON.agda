@@ -11,7 +11,8 @@ open import Data.Nat      using (ℕ)
 open import Data.Nat.Show using () renaming (show to showℕ)
 open import Data.String   using (String; _++_)
 open import Data.Product  using (Σ; _,_; _×_)
-open import Data.List     using (List)
+open import Data.List     using (List; []; _∷_)
+open import Data.List.NonEmpty using (List⁺)
 open import Data.List.Relation.Unary.All using (All)
 
 private
@@ -24,19 +25,31 @@ private
   panelTypeOf Gauge      = "gauge"
   panelTypeOf Table      = "table"
 
+  renderTarget : {M : Model} {τ : PromType} → Expr M τ → String
+  renderTarget e = "{ \"expr\": \"" ++ prettyExpr e ++ "\" }"
+
+  renderTargetTail : {M : Model} {τ : PromType} → List (Expr M τ) → String
+  renderTargetTail []       = ""
+  renderTargetTail (e ∷ es) = ", " ++ renderTarget e ++ renderTargetTail es
+
+  renderTargets : {M : Model} {τ : PromType} → List⁺ (Expr M τ) → String
+  renderTargets ts =
+    "[" ++ renderTarget   (List⁺.head ts)
+        ++ renderTargetTail (List⁺.tail ts)
+        ++ "]"
+
   renderPanel : {M : Model} → Rect → AnyPanel M → String
-  renderPanel pos (k , mkPanel ti tg) =
-    let q = prettyExpr tg in
-      "    {"                                                              ++ nl ++
-      "      \"type\": \"" ++ panelTypeOf k ++ "\","                        ++ nl ++
-      "      \"title\": \"" ++ ti ++ "\","                                  ++ nl ++
-      "      \"datasource\": { \"type\": \"prometheus\" },"                 ++ nl ++
-      "      \"gridPos\": { \"x\": " ++ showℕ (x pos)
-                       ++ ", \"y\": " ++ showℕ (y pos)
-                       ++ ", \"w\": " ++ showℕ (w pos)
-                       ++ ", \"h\": " ++ showℕ (h pos) ++ " },"            ++ nl ++
-      "      \"targets\": [{ \"expr\": \"" ++ q ++ "\" }]"                  ++ nl ++
-      "    }"
+  renderPanel pos (k , mkPanel ti tgs) =
+    "    {"                                                              ++ nl ++
+    "      \"type\": \"" ++ panelTypeOf k ++ "\","                        ++ nl ++
+    "      \"title\": \"" ++ ti ++ "\","                                  ++ nl ++
+    "      \"datasource\": { \"type\": \"prometheus\" },"                 ++ nl ++
+    "      \"gridPos\": { \"x\": " ++ showℕ (x pos)
+                     ++ ", \"y\": " ++ showℕ (y pos)
+                     ++ ", \"w\": " ++ showℕ (w pos)
+                     ++ ", \"h\": " ++ showℕ (h pos) ++ " },"            ++ nl ++
+    "      \"targets\": " ++ renderTargets tgs                            ++ nl ++
+    "    }"
 
   -- Walk del Tiling: ad ogni foglia, il Rect è derivato dagli indici del
   -- sotto-Tiling (place ≅ ricostruzione del Rect dalle implicite). Le

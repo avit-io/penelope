@@ -44,14 +44,16 @@ queryTypeOf Table      = InstantVector
 
 record Panel (M : Model) (k : PanelKind) : Set where
   field
-    title  : String
-    target : Expr M (queryTypeOf k)
+    title   : String
+    targets : List⁺ (Expr M (queryTypeOf k))
 ```
 
-Non c'è un campo `.proof : queryTypeOf k ≡ τ`. Il tipo della `target` è
-**già** `Expr M (queryTypeOf k)`. Mettere un `Expr M Scalar` in un panel
-`TimeSeries` non è un errore di validazione runtime: è un errore di
-unificazione del typechecker. La spec è nello shape, non nei commenti.
+Non c'è un campo `.proof : queryTypeOf k ≡ τ`. Il tipo delle `targets` è
+**già** `List⁺ (Expr M (queryTypeOf k))`. Mettere un `Expr M Scalar` in
+un panel `TimeSeries` non è un errore di validazione runtime: è un
+errore di unificazione del typechecker. Tutte le target di un panel
+condividono lo stesso PromType (overlay di metriche compatibili). La
+spec è nello shape, non nei commenti.
 
 ### Due livelli: geometria intrinseca, decorazione separata
 
@@ -178,14 +180,14 @@ miaApp = record { Time = ℕ ; Val = Float ; Series = String }
 
 errori : Panel miaApp TimeSeries
 errori = mkPanel "Errori / s"
-  (sumBy ("job" ∷ []) (rate (range "http_requests_errors_total" 5)))
+  [ sumBy ("job" ∷ []) (rate (range "http_requests_errors_total" 5)) ]
 
 latenza : Panel miaApp TimeSeries
 latenza = mkPanel "Latenza"
-  (rate (range "http_request_duration_seconds_sum" 5))
+  [ rate (range "http_request_duration_seconds_sum" 5) ]
 
 budget : Panel miaApp Stat
-budget = mkPanel "Budget consumato" (scalar "0.42")
+budget = mkPanel "Budget consumato" [ scalar "0.42" ]
 
 -- Geometria: tassellamento del viewport 24×16.
 viewport : Rect
