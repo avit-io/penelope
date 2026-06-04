@@ -2,6 +2,7 @@ module Penelope.Panel where
 
 open import Prometea.Core
 open import HenQL.Syntax
+open import Data.Product using (Σ)
 open import Data.String using (String)
 
 -- Le famiglie di panel Grafana che Penelope sa tessere.
@@ -28,3 +29,9 @@ record Panel (M : Model) (k : PanelKind) : Set where
   field
     title  : String
     target : Expr M (queryTypeOf k)
+
+-- Un panel di kind qualunque sotto il modello M.
+-- L'esistenziale nasconde il kind ma il modello resta fisso: tutti i panel
+-- della stessa tela condividono lo stesso M.
+AnyPanel : Model → Set
+AnyPanel M = Σ PanelKind (Panel M)

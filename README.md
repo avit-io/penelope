@@ -6,7 +6,7 @@
 
 > *Tesse e disfa la tela delle tue metriche — ma il telaio è tipato.*
 
-Verifiable Grafana dashboards in Agda — `Dashboard M`, layout BSP strutturale, integrazione nativa con HenQL.
+Verifiable Grafana dashboards in Agda — geometria (slicing floorplan) e decorazione (panel Grafana) separate, integrazione nativa con HenQL.
 
 ---
 
@@ -53,27 +53,63 @@ Non c'è un campo `.proof : queryTypeOf k ≡ τ`. Il tipo della `target` è
 `TimeSeries` non è un errore di validazione runtime: è un errore di
 unificazione del typechecker. La spec è nello shape, non nei commenti.
 
-### La tela non si sovrappone — per costruzione
+### Due livelli: geometria intrinseca, decorazione separata
+
+**Livello geometrico** (`Penelope.Tiling`) — completamente indipendente
+da Grafana. Un tassellamento è indicizzato sul rettangolo che tassella:
 
 ```agda
-data Layout (M : Model) : Set where
-  cell   : AnyPanel M                          → Layout M
-  above  : (top : Layout M) (bot : Layout M)   → Layout M
-  beside : (lft : Layout M) (rgt : Layout M)   → Layout M
+data Tiling : (x y w h : ℕ) → Set where
+  tile : ∀ {x y w h} → Tiling x y w h
+  hcut : ∀ {x y w} {ht hb : ℕ}
+       → Tiling x y w (suc ht)
+       → Tiling x (y + suc ht) w (suc hb)
+       → Tiling x y w (suc ht + suc hb)
+  vcut : ∀ {x y h} {wl wr : ℕ}
+       → Tiling x y (suc wl) h
+       → Tiling (x + suc wl) y (suc wr) h
+       → Tiling x y (suc wl + suc wr) h
 ```
 
-Una tela è un **albero binary-space-partition**: ogni nodo divide un
-rettangolo in due rettangoli disgiunti. *Due foglie non possono
-sovrapporsi: vivono in regioni di un partizionamento.* Non c'è una prova
-`.non-overlap` da scrivere e verificare — non esiste un costruttore che
-produca celle sovrapposte. **È impossibile per sintassi.**
+Le sotto-dimensioni dei figli sono `suc`-indicizzate, quindi **min-size
+≥ 1 è definizionale**: nessuna cella può avere `w = 0` o `h = 0`. I
+rettangoli figli sono *calcolati dagli indici*, non scelti a parte.
 
-Il renderer cammina l'albero e calcola `gridPos` per ogni foglia
-dividendo il viewport a ogni split. È totale per costruzione strutturale:
+**Classe coperta**: i tassellamenti rappresentabili sono gli **slicing
+floorplan** (partizioni guillotine) — partizioni del rettangolo per
+tagli completi orizzontali o verticali ricorsivi. Il pinwheel a 5
+rettangoli e altri tassellamenti non-guillotine **non sono esprimibili**.
+È una limitazione strutturale, non un buco di copertura.
+
+I lemmi geometrici sono dimostrati **una volta** nel modulo `Tiling`:
+
+```agda
+contained : (t : Tiling x y w h) (l : Leaf t) → place t l ⊆ mkRect x y w h
+disjoint  : (t : Tiling x y w h) (l₁ l₂ : Leaf t)
+          → l₁ ≢ l₂ → Disjoint (place t l₁) (place t l₂)
+```
+
+**Livello decorazione** (`Penelope.Dashboard`) — etichetta le foglie del
+tassellamento con panel. Container style: shape + payload:
+
+```agda
+record Dashboard (M : Model) : Set where
+  field
+    viewport : Rect
+    tiling   : TilingOf viewport
+    label    : Leaf tiling → AnyPanel M
+```
+
+La decorazione **non tocca** la geometria. Cambiare il tassellamento
+non richiede toccare le query; cambiare i panel non richiede ridimostrare
+la disgiunzione. I due assi sono ortogonali.
+
+Il renderer deriva i `gridPos` da `place` del tassellamento — non più
+da un walk ad albero conflato. È totale e i `gridPos` emessi sono validi
+**per costruzione** (nessun `h = 0` possibile):
 
 ```agda
 renderDashboard : {M : Model} → Dashboard M → String
--- emette Grafana JSON; i gridPos derivati dal walk del Layout.
 ```
 
 ---
@@ -91,16 +127,17 @@ giusto prima ancora che la tela esca dal subbio.
 
 | Penelope             | Grafana / Agda                                       |
 |----------------------|------------------------------------------------------|
-| la tela              | `Layout M`, l'albero BSP delle celle                |
-| il filo              | un singolo `Panel M k`                              |
-| il telaio            | il typechecker Agda                                 |
-| `cell`               | una foglia: un panel posizionato                    |
-| `above`              | divisione orizzontale: top sopra bottom             |
-| `beside`             | divisione verticale: left accanto a right           |
-| `queryTypeOf k`      | il tipo del filo imposto dal panel kind             |
-| il pretendente       | una query non tipata che entrerebbe a runtime       |
+| la tela              | `Tiling x y w h`, il tassellamento guillotine        |
+| il filo              | un singolo `Panel M k`                               |
+| il telaio            | il typechecker Agda                                  |
+| `tile`               | una cella foglia                                     |
+| `hcut`               | taglio orizzontale: top sopra bottom                 |
+| `vcut`               | taglio verticale: left accanto a right               |
+| `label`              | la decorazione: a ogni foglia il suo panel           |
+| `queryTypeOf k`      | il tipo del filo imposto dal panel kind              |
+| il pretendente       | una query non tipata che entrerebbe a runtime        |
 | disfare la tela      | ri-editare il modulo, ri-typeckeckare                |
-| Ulisse che torna     | il deploy di Grafana — la tela esce dal telaio      |
+| Ulisse che torna     | il deploy di Grafana — la tela esce dal telaio       |
 
 > *Una dashboard senza tipi è una tela che Penelope, al risveglio, non
 > riconoscerebbe più.*
@@ -132,7 +169,7 @@ depend: standard-library prometea henql penelope
 open import Prometea.Core
 open import HenQL.Syntax
 open import Penelope.Panel
-open import Penelope.Layout
+open import Penelope.Tiling
 open import Penelope.Dashboard
 open import Penelope.JSON
 
@@ -150,13 +187,26 @@ latenza = mkPanel "Latenza"
 budget : Panel miaApp Stat
 budget = mkPanel "Budget consumato" (scalar "0.42")
 
-tela : Layout miaApp
-tela = above (beside (cell (TimeSeries , errori))
-                     (cell (TimeSeries , latenza)))
-             (cell (Stat , budget))
+-- Geometria: tassellamento del viewport 24×16.
+viewport : Rect
+viewport = mkRect 0 0 24 16
+
+tela : TilingOf viewport
+tela = hcut top bot
+  where
+    top : Tiling 0 0 24 8
+    top = vcut (tile {0} {0} {12} {8}) (tile {12} {0} {12} {8})
+    bot : Tiling 0 8 24 8
+    bot = tile
+
+-- Decorazione: ogni foglia → un panel.
+decora : Leaf tela → AnyPanel miaApp
+decora (topL (leftL here))  = TimeSeries , errori
+decora (topL (rightL here)) = TimeSeries , latenza
+decora (botL here)          = Stat , budget
 
 salute : Dashboard miaApp
-salute = mkDashboard "Salute API" "salute-api" tela
+salute = mkDashboard "Salute API" "salute-api" viewport tela decora
 
 -- renderDashboard salute : String — Grafana JSON pronto.
 ```
@@ -178,12 +228,13 @@ agda Examples/Tela.agda    # typecheck dell'esempio
 ```
 penelope/
 ├── Penelope/
-│   ├── Panel.agda       # PanelKind · queryTypeOf · record Panel
-│   ├── Layout.agda      # data Layout — BSP tree (cell / above / beside)
-│   ├── Dashboard.agda   # record Dashboard
-│   └── JSON.agda        # renderDashboard — totale, gridPos derivati
+│   ├── Tiling.agda      # GEOMETRIA — Rect · Tiling · Leaf · place ·
+│   │                    #   contained · disjoint (indipendente da Grafana)
+│   ├── Panel.agda       # PanelKind · queryTypeOf · Panel · AnyPanel
+│   ├── Dashboard.agda   # DECORAZIONE — viewport + tiling + label
+│   └── JSON.agda        # renderDashboard — totale, gridPos da place
 ├── Examples/
-│   └── Tela.agda        # esempio: tre panel, layout BSP, render JSON
+│   └── Tela.agda        # esempio: tre panel, tassellamento, render JSON
 ├── penelope.agda-lib    # depend: standard-library prometea henql
 └── flake.nix            # packages.lib · lib.mkShell · devShells.default
 ```
@@ -211,9 +262,10 @@ HenQL.Print            ← prettyExpr : Expr M τ → String
      │
      │  open import HenQL.Syntax / HenQL.Print
      ▼
-Penelope.Panel         ← Panel M k (target : Expr M (queryTypeOf k))
-Penelope.Layout        ← Layout M (BSP tree, disgiunzione strutturale)
-Penelope.Dashboard     ← Dashboard M
+Penelope.Tiling        ← Rect · Tiling · Leaf · place · ⊆ · Disjoint
+                         (livello geometrico, zero import Grafana)
+Penelope.Panel         ← PanelKind · Panel M k · AnyPanel M
+Penelope.Dashboard     ← Dashboard M (viewport + tiling + label)
 Penelope.JSON          ← renderDashboard → Grafana JSON
 ```
 
@@ -226,27 +278,39 @@ Penelope → dashboard).
 
 ## Garanzie strutturali
 
-Quattro invarianti, **nessuna prova attaccata, nessun runtime check**.
+Cinque invarianti, **nessuna prova attaccata, nessun runtime check**.
 
 - **Coerenza panel ↔ query** — `queryTypeOf k` è computato dal kind. Il
   campo `target : Expr M (queryTypeOf k)` non ammette altri tipi.
   Sostituire un `TimeSeries` con `Stat` cambia il tipo richiesto della
   target; il typechecker rifiuta il sito di costruzione.
-- **Layout non sovrapposto** — `Layout` è un BSP tree. Ogni nodo divide
-  un rettangolo in due regioni disgiunte. **Non esiste un costruttore
-  che produca celle sovrapposte.** È impossibile per sintassi, non per
-  validazione.
-- **Layout contiene il viewport** — il renderer parte da un viewport
-  fisso (24 × 16) e ogni sotto-chiamata riceve una regione strettamente
-  contenuta. Nessuna cella può uscire dal canvas Grafana.
+- **Min-size definizionale** — i cut di `Tiling` hanno sotto-dimensioni
+  `suc`-indicizzate. Una cella di altezza 0 o larghezza 0 non è
+  rappresentabile. Nessun `h = 0` può finire nel `gridPos` emesso.
+- **Foglie disgiunte** — dimostrato come lemma `disjoint` nel modulo
+  `Tiling`. Due foglie distinte di un tassellamento occupano sempre
+  rettangoli `Disjoint`. La prova segue per induzione strutturale sul
+  Tiling e si chiude con `≤-refl` ai confini dei tagli.
+- **Foglie contenute nel viewport** — dimostrato come lemma `contained`.
+  Ogni foglia piazzata è `⊆` il rettangolo del Tiling.
 - **Coerenza del modello** — `Dashboard M` ha un solo `M`. Tutti i panel
-  della tela condividono lo stesso modello semantico (phantom da
-  `Layout M`). Non puoi mescolare panel di modelli diversi nella stessa
-  dashboard.
+  condividono lo stesso modello semantico (`AnyPanel M = Σ PanelKind
+  (Panel M)`). Non puoi mescolare panel di modelli diversi.
 
 `renderDashboard : Dashboard M → String` è **totale**. Nessun caso
 parziale, nessuna eccezione runtime. La tela tessuta è sempre JSON
-sintatticamente valido.
+sintatticamente valido, con `gridPos` validi per costruzione.
+
+### Cosa NON è garantito
+
+- **Tassellamenti non-guillotine** — Penelope copre gli slicing floorplan.
+  Il pinwheel a 5 rettangoli, le partizioni a T-shape e altri layout
+  che richiedono un taglio non-completo non sono esprimibili. È una
+  scelta di scope: la classe coperta è chiusa, semplice da ragionare,
+  e copre il 99% dei layout Grafana realmente usati.
+- **Viewport non vuoto** — `tile` accetta `Tiling x y 0 0`. Se passi un
+  viewport con `w = 0` o `h = 0`, il rendering emette un canvas vuoto.
+  Convenzione consumer-side; nessun cost-of-living per la libreria.
 
 ---
 

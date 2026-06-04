@@ -3,7 +3,7 @@ module Examples.Tela where
 open import Prometea.Core
 open import HenQL.Syntax
 open import Penelope.Panel
-open import Penelope.Layout
+open import Penelope.Tiling
 open import Penelope.Dashboard
 open import Penelope.JSON
 
@@ -19,7 +19,6 @@ miaApp = record { Time = ℕ ; Val = Float ; Series = String }
 
 -- ── Tre panel, tre kind, tre target tipate ──────────────────────────────
 
--- TimeSeries → la target DEVE essere Expr miaApp InstantVector.
 errori : Panel miaApp TimeSeries
 errori = mkPanel "Errori / s"
   (sumBy ("job" ∷ []) (rate (range "http_requests_errors_total" 5)))
@@ -28,21 +27,44 @@ latenza : Panel miaApp TimeSeries
 latenza = mkPanel "Latenza"
   (rate (range "http_request_duration_seconds_sum" 5))
 
--- Stat → la target DEVE essere Expr miaApp Scalar.
 budget : Panel miaApp Stat
 budget = mkPanel "Budget consumato" (scalar "0.42")
 
--- ── La tela: due grafici accanto in alto, un valore singolo in basso ────
--- Per costruzione (BSP) le tre celle non si sovrappongono.
-tela : Layout miaApp
-tela = above (beside (cell (TimeSeries , errori))
-                     (cell (TimeSeries , latenza)))
-             (cell (Stat , budget))
+-- ── Geometria: tassellamento del viewport ──────────────────────────────
+-- Viewport 24×16. Tassellamento: hcut(8/8), top-half è vcut(12/12).
+-- Le sotto-tile sono annotate col tipo per permettere ad Agda di
+-- inferire ht/hb e wl/wr dei cut.
+
+viewport : Rect
+viewport = mkRect 0 0 24 16
+
+tela : TilingOf viewport
+tela = hcut top bot
+  where
+    top : Tiling 0 0 24 8
+    top = vcut left right
+      where
+        left  : Tiling 0 0 12 8
+        left  = tile
+        right : Tiling 12 0 12 8
+        right = tile
+    bot : Tiling 0 8 24 8
+    bot = tile
+
+-- ── Decorazione: etichetta ogni foglia con un panel ────────────────────
+-- Per costruzione (lemmi disjoint + contained), i tre panel sono in
+-- regioni disgiunte del viewport e nessuno esce dal canvas.
+
+decora : Leaf tela → AnyPanel miaApp
+decora (topL (leftL here))  = TimeSeries , errori
+decora (topL (rightL here)) = TimeSeries , latenza
+decora (botL here)          = Stat , budget
 
 salute : Dashboard miaApp
-salute = mkDashboard "Salute API" "salute-api" tela
+salute = mkDashboard "Salute API" "salute-api" viewport tela decora
 
--- Il JSON Grafana corrispondente. Totale, sintatticamente valido.
+-- Il JSON Grafana corrispondente. Totale, sintatticamente valido,
+-- con gridPos disgiunti e contenuti nel viewport per costruzione.
 json : String
 json = renderDashboard salute
 
