@@ -8,7 +8,12 @@ module Penelope.JSON where
 -- ║  Il datasource è PER-PANEL: cammino la tela BSP e per ogni foglia  ║
 -- ║  uso il Datasource impacchettato in AnyPanel per:                  ║
 -- ║   • emettere il campo `datasource.type` (= grafanaType ds);        ║
--- ║   • renderizzare la target via (Datasource.render ds).             ║
+-- ║   • renderizzare ogni target via (Datasource.render ds).           ║
+-- ║                                                                    ║
+-- ║  Un panel porta una lista NON VUOTA di Target. Il rendering        ║
+-- ║  emette l'array `targets` con un elemento per Target, refId        ║
+-- ║  derivato dalla posizione (0 → "A", 1 → "B", …), `alias` (se       ║
+-- ║  presente) e flag `hidden`. La vizConfig resta unica per panel.    ║
 -- ║                                                                    ║
 -- ║  Resta totale per costruzione: i gridPos derivano dagli implicit   ║
 -- ║  (x y w h) del tile, e i lemmi contained/disjoint in Tiling ci     ║
@@ -23,12 +28,15 @@ open import Penelope.Tiling
 open import Penelope.Variable
 open import Penelope.Dashboard
 
-open import Data.Nat      using (ℕ)
+open import Data.Bool     using (Bool; true; false)
+open import Data.Char.Base using () renaming (fromℕ to charFromℕ)
+open import Data.Maybe    using (Maybe; just; nothing)
+open import Data.Nat      using (ℕ; suc; zero; _+_)
 open import Data.Nat.Show using () renaming (show to showℕ)
-open import Data.String   using (String; _++_)
+open import Data.String   using (String; _++_; fromList)
 open import Data.Product  using (Σ; _,_; _×_)
 open import Data.List     using (List; []; _∷_)
-open import Data.List.NonEmpty using (List⁺)
+open import Data.List.NonEmpty using (List⁺; head; tail)
 open import Data.List.Relation.Unary.All using (All)
 
 private
@@ -42,14 +50,44 @@ private
   panelTypeOf BarGauge   = "bargauge"
   panelTypeOf Table      = "table"
 
-  -- Render di un singolo target via il render del Datasource di quel panel.
-  renderTargets : (ap : AnyPanel) → String
-  renderTargets ap =
-    let ds = AnyPanel.ds ap
-        p  = AnyPanel.panel ap in
-    "[{ \"expr\": \""
-      ++ Datasource.render ds (Panel.target p)
-      ++ "\" }]"
+  -- 0 → "A", 1 → "B", … (lettere maiuscole ASCII).
+  refIdOf : ℕ → String
+  refIdOf n = fromList (charFromℕ (65 + n) ∷ [])
+
+  showBool : Bool → String
+  showBool true  = "true"
+  showBool false = "false"
+
+  -- Campo `alias` opzionale: emesso solo se `just`.
+  aliasField : Maybe String → String
+  aliasField nothing  = ""
+  aliasField (just a) = ", \"alias\": \"" ++ a ++ "\""
+
+  -- Render di un singolo target dato il datasource del suo panel.
+  renderOneTarget : (ds : Datasource) (k : PanelKind)
+                  → ℕ → Target ds k → String
+  renderOneTarget ds _ n t =
+    "{ \"refId\": \"" ++ refIdOf n ++ "\""
+      ++ ", \"expr\": \"" ++ Datasource.render ds (Target.query t) ++ "\""
+      ++ aliasField (Target.alias t)
+      ++ ", \"hidden\": " ++ showBool (Target.hidden t)
+      ++ " }"
+
+  -- Tail di una `List` di Target con indice corrente.
+  renderTargetsTail : (ds : Datasource) (k : PanelKind)
+                    → ℕ → List (Target ds k) → String
+  renderTargetsTail _  _ _ []       = ""
+  renderTargetsTail ds k n (t ∷ ts) =
+    ", " ++ renderOneTarget ds k n t
+         ++ renderTargetsTail ds k (suc n) ts
+
+  -- Array `targets` per un panel: lista non vuota, refId derivato.
+  renderTargets : (ds : Datasource) (k : PanelKind)
+                → List⁺ (Target ds k) → String
+  renderTargets ds k ts =
+    "[" ++ renderOneTarget    ds k 0 (head ts)
+        ++ renderTargetsTail  ds k 1 (tail ts)
+        ++ "]"
 
   renderPanel : Rect → AnyPanel → String
   renderPanel pos ap =
@@ -65,7 +103,7 @@ private
                      ++ ", \"y\": " ++ showℕ (y pos)
                      ++ ", \"w\": " ++ showℕ (w pos)
                      ++ ", \"h\": " ++ showℕ (h pos) ++ " },"               ++ nl ++
-    "      \"targets\": " ++ renderTargets ap                               ++ nl ++
+    "      \"targets\": " ++ renderTargets ds k (Panel.targets p)           ++ nl ++
     "    }"
 
   -- Walk del Tiling content-polimorfo, istanziato a C := AnyPanel.
@@ -88,12 +126,12 @@ private
 
   renderVarOptions : List⁺ String → String
   renderVarOptions opts =
-    "[" ++ renderVarOption     (List⁺.head opts)
-        ++ renderVarOptionsTail (List⁺.tail opts)
+    "[" ++ renderVarOption     (head opts)
+        ++ renderVarOptionsTail (tail opts)
         ++ "]"
 
   varQueryString : List⁺ String → String
-  varQueryString opts = go (List⁺.head opts) (List⁺.tail opts)
+  varQueryString opts = go (head opts) (tail opts)
     where
       go : String → List String → String
       go h []       = h
@@ -102,7 +140,7 @@ private
   renderVariable : Variable → String
   renderVariable v =
     let opts = Variable.options v
-        h    = List⁺.head opts in
+        h    = head opts in
     "{ \"name\": \"" ++ Variable.name v ++ "\""               ++
     ", \"type\": \"custom\""                                  ++
     ", \"query\": \"" ++ varQueryString opts ++ "\""          ++

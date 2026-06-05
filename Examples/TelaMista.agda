@@ -61,11 +61,7 @@ streamP : Pipe logSchema logSchema
 streamP = filterp (var app∈ ≡ᵉ lit "webapp")
 
 lokiTable : Panel lokiApp Table
-lokiTable = record
-  { title  = "Webapp logs"
-  ; target = logT streamP
-  ; ok     = tt   -- T (faithfulLogQLB streamP) riduce a ⊤
-  }
+lokiTable = mkPanel1 "Webapp logs" (logT streamP)
 
 -- ── La tela: 12×8 budget ↔ 12×8 lokiTable → viewport 24×8 ────────────
 viewport : Rect

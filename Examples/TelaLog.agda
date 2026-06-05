@@ -36,6 +36,7 @@ open import Penelope.Sugar
 
 open import Data.String using (String)
 open import Data.List   using (_∷_; [])
+open import Data.List.NonEmpty using (head)
 
 -- ── Schema ────────────────────────────────────────────────────────────
 logSchema : Schema
@@ -57,22 +58,23 @@ elasticDS = elastic logSchema
 
 -- ── DUE panel con la STESSA target ────────────────────────────────────
 panelL : Panel lokiDS Table
-panelL = record { title = "via Loki"    ; target = logT q ; ok = tt }
+panelL = mkPanel1 "via Loki" (logT q)
 
 panelE : Panel elasticDS Table
-panelE = record { title = "via Elastic" ; target = logT q ; ok = tt }
+panelE = mkPanel1 "via Elastic" (logT q)
 
--- Refl: i target dei due panel sono la stessa cosa (entrambi `logT q`,
+-- Refl: la query dell'unico target è la stessa cosa (entrambi `logT q`,
 -- entrambi di tipo `LoquelTarget' logSchema logStream`).
-sameTarget : Panel.target panelL ≡ Panel.target panelE
+sameTarget : Target.query (head (Panel.targets panelL))
+           ≡ Target.query (head (Panel.targets panelE))
 sameTarget = refl
 
 -- ── Due render distinti, dalla stessa target. ─────────────────────────
 renderL : String
-renderL = Datasource.render lokiDS    (Panel.target panelL)
+renderL = Datasource.render lokiDS    (Target.query (head (Panel.targets panelL)))
 
 renderE : String
-renderE = Datasource.render elasticDS (Panel.target panelE)
+renderE = Datasource.render elasticDS (Target.query (head (Panel.targets panelE)))
 
 -- Golden — fissati per refl, così se cambiano i renderer il modulo
 -- non typeckecka.

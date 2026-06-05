@@ -51,19 +51,19 @@ infix 9 □_
 -- ─────────────────────────────────────────────────────────────────────
 
 timeseries : ∀ {M} → String → Expr M InstantVector → Panel (prometheus M) TimeSeries
-timeseries t e = record { title = t ; target = e ; ok = tt }
+timeseries t e = mkPanel1 t e
 
 stat : ∀ {M} → String → Expr M Scalar → Panel (prometheus M) Stat
-stat t e = record { title = t ; target = e ; ok = tt }
+stat t e = mkPanel1 t e
 
 gauge : ∀ {M} → String → Expr M Scalar → Panel (prometheus M) Gauge
-gauge t e = record { title = t ; target = e ; ok = tt }
+gauge t e = mkPanel1 t e
 
 bargauge : ∀ {M} → String → Expr M Scalar → Panel (prometheus M) BarGauge
-bargauge t e = record { title = t ; target = e ; ok = tt }
+bargauge t e = mkPanel1 t e
 
 table : ∀ {M} → String → Expr M InstantVector → Panel (prometheus M) Table
-table t e = record { title = t ; target = e ; ok = tt }
+table t e = mkPanel1 t e
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Operatori infissi: ↕ è hcut (top sopra bot), ↔ è vcut (left accanto
