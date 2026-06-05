@@ -47,11 +47,12 @@ private
   nl = "\n"
 
   panelTypeOf : PanelKind → String
-  panelTypeOf TimeSeries = "timeseries"
-  panelTypeOf Stat       = "stat"
-  panelTypeOf Gauge      = "gauge"
-  panelTypeOf BarGauge   = "bargauge"
-  panelTypeOf Table      = "table"
+  panelTypeOf TimeSeries    = "timeseries"
+  panelTypeOf Stat          = "stat"
+  panelTypeOf Gauge         = "gauge"
+  panelTypeOf BarGauge      = "bargauge"
+  panelTypeOf Table         = "table"
+  panelTypeOf StatusHistory = "status-history"
 
   -- 0 → "A", 1 → "B", … (lettere maiuscole ASCII).
   refIdOf : ℕ → String
@@ -150,9 +151,10 @@ private
         ", \"current\": { \"text\": \"" ++ h ++ "\", \"value\": \"" ++ h ++ "\" }" ++
         ", \"options\": " ++ renderVarOptions opts                 ++
         " }"
-  ... | querySpec fld multi inc =
+  ... | querySpec src fld multi inc =
         "{ \"name\": \"" ++ Variable.name v ++ "\""                ++
         ", \"type\": \"query\""                                    ++
+        ", \"datasource\": { \"type\": \"" ++ src ++ "\" }"        ++
         ", \"query\": { \"find\": \"terms\", \"field\": \"" ++ fld ++ "\" }" ++
         ", \"multi\": " ++ showBool multi                          ++
         ", \"includeAll\": " ++ showBool inc                       ++
@@ -168,14 +170,11 @@ private
   renderTemplating vars = "{ \"list\": [" ++ joinVars vars ++ "] }"
 
 -- ─────────────────────────────────────────────────────────────────────
--- Raccolta delle Variable referenziate dai Panel della tela + dedup
--- per `name` (prima occorrenza vince).
+-- Dedup per nome (prima occorrenza vince) sulla concatenazione dei
+-- riferimenti raccolti dai panel + extras della dashboard. La raccolta
+-- da Tiling vive in Penelope.Dashboard (così la well-formedness della
+-- Dashboard può vincolarla a livello di tipo).
 -- ─────────────────────────────────────────────────────────────────────
-
-collectPanelVars : ∀ {x y w h} → Tiling AnyPanel x y w h → List Variable
-collectPanelVars (tile ap)    = Panel.vars (AnyPanel.panel ap)
-collectPanelVars (hcut tt tb) = collectPanelVars tt ++ˡ collectPanelVars tb
-collectPanelVars (vcut tl tr) = collectPanelVars tl ++ˡ collectPanelVars tr
 
 private
   hasName : String → List Variable → Bool

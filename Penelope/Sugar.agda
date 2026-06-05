@@ -31,7 +31,7 @@ open import Data.Bool          using (T)
 open import Data.Unit          using (tt)
 open import Data.Nat           using (ℕ; zero; suc; _+_)
 open import Data.Product       using (_,_)
-open import Data.List          using (List; _∷_)
+open import Data.List          using (List; _∷_; _++_)
 open import Data.List.NonEmpty using (List⁺; [_])
 open import Data.Vec           using (Vec; _∷_; [])
 open import Data.String        using (String)
@@ -130,9 +130,17 @@ cols (t ∷ u ∷ us) = t ↔ cols (u ∷ us)
 -- Binder per template variables.
 -- ─────────────────────────────────────────────────────────────────────
 
-forEach : String → List⁺ String
-        → (Variable → Dashboard) → Dashboard
-forEach name opts f =
+forEach : (name : String) (opts : List⁺ String)
+        → (f : Variable → Dashboard)
+        → {wf : T (varsConsistentB
+                    (collectPanelVars (Dashboard.tiling (f (mkVariable name opts)))
+                     ++
+                     (mkVariable name opts ∷
+                      Dashboard.variables (f (mkVariable name opts)))))}
+        → Dashboard
+forEach name opts f {wf} =
   let v = mkVariable name opts
       d = f v
-  in record d { variables = v ∷ Dashboard.variables d }
+  in mkDashboard (Dashboard.title d) (Dashboard.uid d)
+                 (v ∷ Dashboard.variables d)
+                 (Dashboard.viewport d) (Dashboard.tiling d) {wf}

@@ -52,11 +52,12 @@ data LQKind : Set where
   logStream : LQKind
 
 loquelQueryTypeOf : PanelKind → LQKind
-loquelQueryTypeOf Stat       = scalarM
-loquelQueryTypeOf Gauge      = scalarM
-loquelQueryTypeOf BarGauge   = scalarM
-loquelQueryTypeOf TimeSeries = rangeM
-loquelQueryTypeOf Table      = logStream
+loquelQueryTypeOf Stat          = scalarM
+loquelQueryTypeOf Gauge         = scalarM
+loquelQueryTypeOf BarGauge      = scalarM
+loquelQueryTypeOf TimeSeries    = rangeM
+loquelQueryTypeOf StatusHistory = rangeM
+loquelQueryTypeOf Table         = logStream
 
 -- Ctx Loquel: lo schema di partenza, lifted in Set₁ per uniformità con
 -- QueryLang.Ctx.
@@ -189,10 +190,18 @@ mkVar : ∀ {s} (name fieldName : String)
         {keywordOK : T (endsKeyword fieldName)} → Var s
 mkVar n f p m a {kw} = mkVar′ n f p kw m a
 
--- Iniezione nella forma opaca usata dal renderer JSON.
-varToVariable : ∀ {s} → Var s → Variable
-varToVariable v = mkQueryVariable (Var.name v) (Var.fieldName v)
-                                   (Var.multi v) (Var.includeAll v)
+-- Iniezione nella forma opaca usata dal renderer JSON. Lo
+-- `sourceGrafanaType` viene timbrato esplicitamente dal sito chiamante
+-- (un datasource Loquel può essere loki o elastic). Helper specifici:
+varToVariable : ∀ {s} → (sourceGrafanaType : String) → Var s → Variable
+varToVariable src v = mkQueryVariable (Var.name v) src (Var.fieldName v)
+                                       (Var.multi v) (Var.includeAll v)
+
+elasticVar : ∀ {s} → Var s → Variable
+elasticVar = varToVariable "elasticsearch"
+
+lokiVar : ∀ {s} → Var s → Variable
+lokiVar = varToVariable "loki"
 
 -- Combinatore: `p ==ᵛ v` è il filtro `var p ≡ᵉ lit "$name"`.
 -- Il campo della prova `p` e quello dichiarato in `v` non sono forzati

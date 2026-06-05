@@ -18,6 +18,11 @@ module Penelope.Dashboard where
 -- ║  Multi-target ≠ multi-datasource: tutti i target di un panel       ║
 -- ║  condividono il datasource del panel. Il pannello "-- Mixed --"    ║
 -- ║  di Grafana non è in scope.                                        ║
+-- ║                                                                    ║
+-- ║  Dashboard porta un VINCOLO DI BEN FORMAZIONE sulle variabili:     ║
+-- ║  due riferimenti con lo stesso `name` ma `spec` divergenti (es.    ║
+-- ║  multi=true vs multi=false, o `fld` diversi) sono un errore di    ║
+-- ║  tipo (`varsConsistentB` riduce a `false` → `T false ≡ ⊥`).        ║
 -- ╚════════════════════════════════════════════════════════════════════╝
 
 open import Penelope.Panel
@@ -26,8 +31,8 @@ open import Penelope.Datasource
 open import Penelope.Tiling
 open import Penelope.Variable
 
-open import Data.Bool          using (T; Bool; false)
-open import Data.List          using (List; [])
+open import Data.Bool          using (T; Bool; false; true)
+open import Data.List          using (List; []; _∷_; _++_)
 open import Data.List.NonEmpty using (List⁺; [_])
 open import Data.Maybe         using (Maybe; nothing)
 open import Data.String        using (String)
@@ -46,8 +51,9 @@ record Target (ds : Datasource) (k : PanelKind) : Set where
 
 -- Un panel sotto un datasource specifico, con lista NON VUOTA di target.
 -- `vars` registra le variabili di dashboard referenziate dai target del
--- panel (i.e. quelle prodotte da `_==ᵛ_` nell'adapter Loquel). Sono
--- opache qui — il render le raccoglie e dedupplica per nome.
+-- panel (i.e. quelle prodotte da `_==ᵛ_` nell'adapter Loquel o da `_=ᵛ_`
+-- nell'adapter Prometheus). Sono opache qui — il render le raccoglie e
+-- dedupplica per nome.
 record Panel (ds : Datasource) (k : PanelKind) : Set where
   constructor mkPanel
   field
@@ -79,14 +85,43 @@ record AnyPanel : Set₂ where
     kind  : PanelKind
     panel : Panel ds kind
 
--- La dashboard: viewport + tela BSP + variables. Tiling porta AnyPanel
--- come contenuto, quindi panel con datasource diversi possono coesistere
--- nella stessa tela. Non c'è alcun parametro globale.
+-- ─── Raccolta delle variable references dai panel sulla tela ─────────
+
+collectPanelVars : ∀ {x y w h} → Tiling AnyPanel x y w h → List Variable
+collectPanelVars (tile ap)     = Panel.vars (AnyPanel.panel ap)
+collectPanelVars (hcut th tb′) = collectPanelVars th ++ collectPanelVars tb′
+collectPanelVars (vcut tl tr)  = collectPanelVars tl ++ collectPanelVars tr
+
+-- La dashboard: viewport + tela BSP + variabili-extra + ben formazione.
+-- Tiling porta AnyPanel come contenuto, quindi panel con datasource
+-- diversi possono coesistere nella stessa tela. Il campo `wf` è la prova
+-- (implicita, di default `tt`) che le variabili — quelle raccolte dai
+-- panel + quelle extra — sono COERENTI per nome (nessuna divergenza di
+-- spec).
 record Dashboard : Set₂ where
-  constructor mkDashboard
+  constructor mkDashboard′
   field
     title     : String
     uid       : String
     variables : List Variable
     viewport  : Rect
     tiling    : TilingOf AnyPanel viewport
+    wf        : T (varsConsistentB
+                    (collectPanelVars tiling ++ variables))
+
+-- Smart constructor: `wf` è implicito, l'utente non lo passa e si
+-- risolve a `tt` quando la lista è coerente. Riferimenti in conflitto
+-- (es. due `env` con `multi` diverso) ⇒ `T false ≡ ⊥`: typecheck fail.
+mkDashboard : (title uid : String) (variables : List Variable)
+            → (viewport : Rect) → (tl : TilingOf AnyPanel viewport)
+            → {wf : T (varsConsistentB
+                        (collectPanelVars tl ++ variables))}
+            → Dashboard
+mkDashboard t u vs vp tl {wf} = record
+  { title     = t
+  ; uid       = u
+  ; variables = vs
+  ; viewport  = vp
+  ; tiling    = tl
+  ; wf        = wf
+  }

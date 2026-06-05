@@ -94,7 +94,7 @@ mainPanel : Panel elasticDS TimeSeries
 mainPanel = record
   { title   = "Activity scoped"
   ; targets = mainTarget ∷⁺ []
-  ; vars    = varToVariable levelVar ∷ varToVariable envVar ∷ []
+  ; vars    = elasticVar levelVar ∷ elasticVar envVar ∷ []
   }
 
 -- ── Una tela 24×8 con un solo panel.
@@ -128,17 +128,19 @@ _ = refl
 -- field) e una per `env` (Env.keyword field), nello stesso ordine in
 -- cui compaiono in `Panel.vars`.
 _ : dashboardVariables varsDash
-  ≡ varToVariable levelVar ∷ varToVariable envVar ∷ []
+  ≡ elasticVar levelVar ∷ elasticVar envVar ∷ []
 _ = refl
 
--- (c) `varToVariable` di una `Var` produce una `Variable` opaca con
+-- (c) `elasticVar` di una `Var` produce una `Variable` opaca con
 -- spec `querySpec` sul campo `.keyword` corretto.
 open import Penelope.Variable using (Variable; mkQueryVariable)
 
-_ : varToVariable envVar ≡ mkQueryVariable "env" "Env.keyword" true true
+_ : elasticVar envVar
+  ≡ mkQueryVariable "env" "elasticsearch" "Env.keyword" true true
 _ = refl
 
-_ : varToVariable levelVar ≡ mkQueryVariable "loggerlevel" "LoggerLevel.keyword" true true
+_ : elasticVar levelVar
+  ≡ mkQueryVariable "loggerlevel" "elasticsearch" "LoggerLevel.keyword" true true
 _ = refl
 
 -- ╔════════════════════════════════════════════════════════════════════╗
