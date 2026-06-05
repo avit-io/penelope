@@ -6,22 +6,32 @@
 
 > *Tesse e disfa la tela delle tue metriche — ma il telaio è tipato.*
 
-Verifiable Grafana dashboards in Agda — geometria (slicing floorplan) e decorazione (panel Grafana) separate, integrazione nativa con HenQL.
+Verifiable Grafana dashboards in Agda — geometria (slicing floorplan) e
+decorazione (panel Grafana) separate, datasource **per-panel** (Prometheus
+via HenQL, Loki/Elastic via Loquel), variabili condivise tra backend con
+ben-formazione a tempo di tipo.
 
 ---
 
 ## Il problema
 
 Una dashboard Grafana è un file JSON di parecchie centinaia di righe. Ogni
-panel ha un `type` (`timeseries`, `stat`, `gauge`, `table`) e una lista di
-`targets` con espressioni PromQL. **Niente garantisce che il tipo del panel
-sia compatibile con il tipo della query**: un panel `stat` con una
-`rate(...)[5m]` come target è un errore silenzioso, scoperto solo quando
-Grafana mostra il vuoto.
+panel ha un `type` (`timeseries`, `stat`, `gauge`, `bargauge`, `table`,
+`status-history`), un `datasource` (Prometheus, Loki, Elastic, …) e una
+lista di `targets` con espressioni nel linguaggio di quel backend. **Niente
+garantisce che il tipo del panel sia compatibile con il tipo della query**:
+un panel `stat` con una `rate(...)[5m]` come target è un errore silenzioso,
+scoperto solo quando Grafana mostra il vuoto.
 
 E la disposizione? `gridPos` è un quartetto `(x, y, w, h)` libero. Due
 panel possono sovrapporsi, scappare dal canvas, lasciare buchi. Tutto JSON
 sintatticamente valido, tutto rotto a livello visivo.
+
+E le variabili? Grafana le sostituisce a runtime nelle query con un
+sentinella `$nome` — ma nulla impedisce a due panel di referenziare la
+stessa `env` con flag `multi` divergenti (uno `=`, l'altro `=~`), o di
+puntare a campi diversi: il JSON resta valido, il selettore in alto si
+rompe in silenzio.
 
 ---
 
@@ -30,40 +40,87 @@ sintatticamente valido, tutto rotto a livello visivo.
 Penelope codifica entrambi i vincoli **nella struttura dei tipi**. Nessuna
 prova `.proof` attaccata: le regole sono nello shape.
 
-### Il panel kind determina il PromType — non lo *vincola*, lo *è*
+### Il panel kind determina il QueryType — non lo *vincola*, lo *è*
 
 ```agda
 data PanelKind : Set where
-  TimeSeries Stat Gauge Table : PanelKind
-
-queryTypeOf : PanelKind → PromType
-queryTypeOf TimeSeries = InstantVector
-queryTypeOf Stat       = Scalar
-queryTypeOf Gauge      = Scalar
-queryTypeOf Table      = InstantVector
-
-record Panel (M : Model) (k : PanelKind) : Set where
-  field
-    title   : String
-    targets : List⁺ (Expr M (queryTypeOf k))
+  TimeSeries Stat Gauge BarGauge Table StatusHistory : PanelKind
 ```
 
-Non c'è un campo `.proof : queryTypeOf k ≡ τ`. Il tipo delle `targets` è
-**già** `List⁺ (Expr M (queryTypeOf k))`. Mettere un `Expr M Scalar` in
-un panel `TimeSeries` non è un errore di validazione runtime: è un
-errore di unificazione del typechecker. Tutte le target di un panel
-condividono lo stesso PromType (overlay di metriche compatibili). La
-spec è nello shape, non nei commenti.
+Quale `QueryType` esige un dato kind è una proprietà del **backend** (il
+mapping può essere diverso fra Prometheus e Loquel). Penelope astrae i
+backend dietro una record `QueryLang`:
+
+```agda
+record QueryLang : Set₂ where
+  field
+    Ctx         : Set₁
+    QueryType   : Set
+    Query       : Ctx → QueryType → Set
+    queryTypeOf : PanelKind → QueryType
+```
+
+E ogni backend istanzia la propria `queryTypeOf`:
+
+```agda
+-- HenQL/Prometheus
+henqlQueryTypeOf TimeSeries    = InstantVector
+henqlQueryTypeOf Stat          = Scalar
+henqlQueryTypeOf Gauge         = Scalar
+henqlQueryTypeOf BarGauge      = Scalar
+henqlQueryTypeOf Table         = InstantVector
+henqlQueryTypeOf StatusHistory = InstantVector
+
+-- Loquel (Loki/Elastic): scalarM / rangeM / logStream
+loquelQueryTypeOf Stat          = scalarM
+loquelQueryTypeOf TimeSeries    = rangeM
+loquelQueryTypeOf StatusHistory = rangeM
+loquelQueryTypeOf Table         = logStream
+-- …
+```
+
+Un `Panel` si indicizza sul **datasource** (non sul model) e sul kind:
+
+```agda
+record Panel (ds : Datasource) (k : PanelKind) : Set where
+  field
+    title   : String
+    targets : List⁺ (Target ds k)
+    vars    : List Variable
+```
+
+Il campo `targets` ospita una lista **non vuota** di `Target ds k`. Ogni
+target porta una query nel `QueryLang` del datasource, sul `Ctx`
+corretto, con il `QueryType` imposto dal kind — più una prova booleana di
+fedeltà al frammento (`ok : T (faithful? ds query)`). Una query fuori dal
+frammento fedele del backend NON typeckecka.
+
+### Datasource per-panel: Prometheus, Loki, Elastic nella stessa tela
+
+In Grafana il datasource è **per-panel**. Penelope segue: `Datasource` è
+una record opaca con `lang : QueryLang`, `ctx`, `grafanaType`, `render`,
+`faithful?`. Ogni backend espone fabbriche:
+
+```agda
+prometheus : Model  → Datasource           -- HenQL, "prometheus"
+loki       : Schema → Datasource           -- Loquel, "loki"
+elastic    : Schema → Datasource           -- Loquel, "elasticsearch"
+```
+
+Il tipo esistenziale `AnyPanel : Set₂` impacchetta `(ds, kind, Panel ds
+kind)`. La tela porta `AnyPanel` come contenuto: **panel di backend
+diversi coesistono nella stessa dashboard** senza che la geometria sappia
+nulla di Grafana.
 
 ### Due livelli: geometria content-polimorfa + decorazione che istanzia
 
 **Livello geometrico** (`Penelope.Tiling`) — completamente indipendente
-da Grafana. Tiling è parametrico su un contenuto astratto `C : Set`,
-mai sul `Model`: `tile : C → Tiling C x y w h`. Niente import di
-`Penelope.Panel` / `HenQL.Syntax` / `Prometea.Core`.
+da Grafana. Tiling è parametrico su un contenuto astratto `C : Set ℓ`,
+mai sul `Model` né sul `Datasource`: `tile : C → Tiling C x y w h`.
+Niente import di `Penelope.Panel` / `HenQL.Syntax` / `Loquel.*`.
 
 ```agda
-data Tiling (C : Set) : (x y w h : ℕ) → Set where
+data Tiling {ℓ} (C : Set ℓ) : (x y w h : ℕ) → Set ℓ where
   tile : ∀ {x y w h} → C → Tiling C x y w h
   hcut : ∀ {x y w} {ht hb : ℕ}
        → Tiling C x y w (suc ht)
@@ -89,25 +146,36 @@ disjoint  : (t : Tiling C x y w h) (l₁ l₂ : Leaf t)
           → l₁ ≢ l₂ → Disjoint (place t l₁) (place t l₂)
 ```
 
-**Livello decorazione** (`Penelope.Dashboard`) — istanzia
-`C := AnyPanel M`. La coerenza del modello vive qui, non nella geometria.
+`Tiling` vive in `Set ℓ` per ogni `ℓ`, quindi può ospitare `AnyPanel :
+Set₂` senza inflazioni di universi.
+
+**Livello decorazione** (`Penelope.Dashboard`) — istanzia `C := AnyPanel`.
+La coerenza fra panel↔query↔datasource vive nel singolo `AnyPanel`, non
+nella geometria. La coerenza fra panel diversi (variabili condivise) vive
+in `Dashboard` come campo di ben-formazione:
 
 ```agda
-record Dashboard (M : Model) : Set where
+record Dashboard : Set₂ where
   field
-    viewport : Rect
-    tiling   : TilingOf (AnyPanel M) viewport
+    title uid  : String
+    variables  : List Variable
+    viewport   : Rect
+    tiling     : TilingOf AnyPanel viewport
+    wf         : T (varsConsistentB
+                     (collectPanelVars tiling ++ variables))
 ```
 
-Il payload è dentro il tile (`tile (□ panel)`) — niente più funzione
-label separata. La geometria resta poligrafica: `↕`/`↔` non menzionano
-M, e widget/rows/cols (Sugar) restano polimorfi in C.
+`wf` è implicito nel smart constructor `mkDashboard`: si risolve a `tt`
+quando la lista delle variabili (quelle raccolte dai panel + quelle extra)
+è coerente per nome. Due `env` con `multi` divergenti, o con `fld`
+diversi, fanno ridurre `varsConsistentB` a `false` → `T false ≡ ⊥`:
+typecheck fail.
 
 Il renderer deriva i `gridPos` dagli implicit del tile, è totale, e i
 gridPos emessi sono validi **per costruzione**:
 
 ```agda
-renderDashboard : {M : Model} → Dashboard M → String
+renderDashboard : Dashboard → String
 ```
 
 ---
@@ -126,13 +194,14 @@ giusto prima ancora che la tela esca dal subbio.
 | Penelope             | Grafana / Agda                                       |
 |----------------------|------------------------------------------------------|
 | la tela              | `Tiling x y w h`, il tassellamento guillotine        |
-| il filo              | un singolo `Panel M k`                               |
+| il filo              | un singolo `Panel ds k`                              |
+| il subbio            | il `Datasource` che orienta i fili (per-panel)       |
 | il telaio            | il typechecker Agda                                  |
 | `tile`               | una cella foglia                                     |
 | `hcut`               | taglio orizzontale: top sopra bottom                 |
 | `vcut`               | taglio verticale: left accanto a right               |
-| `label`              | la decorazione: a ogni foglia il suo panel           |
 | `queryTypeOf k`      | il tipo del filo imposto dal panel kind              |
+| `$service` / `$env`  | la spola — passa fra fili diversi, lo stesso valore  |
 | il pretendente       | una query non tipata che entrerebbe a runtime        |
 | disfare la tela      | ri-editare il modulo, ri-typeckeckare                |
 | Ulisse che torna     | il deploy di Grafana — la tela esce dal telaio       |
@@ -160,13 +229,15 @@ devShells.x86_64-linux.default =
 # mio-progetto.agda-lib
 name: mio-progetto
 include: .
-depend: standard-library prometea henql penelope
+depend: standard-library prometea henql loquel penelope
 ```
 
 ```agda
 open import Prometea.Core
 open import HenQL.Syntax
 open import Penelope.Panel
+open import Penelope.Datasource
+open import Penelope.Backend.Prometheus
 open import Penelope.Tiling
 open import Penelope.Dashboard
 open import Penelope.JSON
@@ -175,97 +246,190 @@ open import Penelope.Sugar     -- timeseries/stat/... · □_ · ↕/↔
 miaApp : Model
 miaApp = record { Time = ℕ ; Val = Float ; Series = String }
 
-errori : Panel miaApp TimeSeries
+promApp : Datasource
+promApp = prometheus miaApp
+
+errori : Panel promApp TimeSeries
 errori = timeseries "Errori / s"
-  (sumBy ("job" ∷ []) (rate (range "http_requests_errors_total" 5)))
+  (sumBy ("job" ∷ []) (rate (range "http_requests_errors_total" [] 5)))
 
-latenza : Panel miaApp TimeSeries
+latenza : Panel promApp TimeSeries
 latenza = timeseries "Latenza"
-  (rate (range "http_request_duration_seconds_sum" 5))
+  (rate (range "http_request_duration_seconds_sum" [] 5))
 
-budget : Panel miaApp Stat
+budget : Panel promApp Stat
 budget = stat "Budget consumato" (scalar "0.42")
 
 -- Geometria con payload: tile carica direttamente l'AnyPanel.
 viewport : Rect
 viewport = mkRect 0 0 24 16
 
-tela : TilingOf (AnyPanel miaApp) viewport
+tela : TilingOf AnyPanel viewport
 tela = (left ↔ right) ↕ bot
   where
-    left  : Tiling (AnyPanel miaApp) 0 0 12 8
+    left  : Tiling AnyPanel 0 0 12 8
     left  = tile (□ errori)
-    right : Tiling (AnyPanel miaApp) 12 0 12 8
+    right : Tiling AnyPanel 12 0 12 8
     right = tile (□ latenza)
-    bot   : Tiling (AnyPanel miaApp) 0 8 24 8
+    bot   : Tiling AnyPanel 0 8 24 8
     bot   = tile (□ budget)
 
-salute : Dashboard miaApp
+salute : Dashboard
 salute = mkDashboard "Salute API" "salute-api" [] viewport tela
---                                              ↑
---                                   nessuna template variable
 
 -- renderDashboard salute : String — Grafana JSON pronto.
 ```
 
+### Dashboard mista (Prometheus + Loki + Elastic)
+
+Lo stesso `Tiling AnyPanel` può ospitare panel di backend diversi:
+
+```agda
+open import Penelope.Backend.Prometheus  using (prometheus)
+open import Penelope.Backend.Loquel      using (loki; elastic; logT)
+open import Loquel.Pipe                  using (Pipe; filterp)
+
+promDS    : Datasource ; promDS    = prometheus miaApp
+lokiDS    : Datasource ; lokiDS    = loki    appSchema
+elasticDS : Datasource ; elasticDS = elastic appSchema
+
+budget   : Panel promDS    Stat       ; budget   = stat ...
+logTable : Panel lokiDS    Table      ; logTable = mkPanel1 ... (logT pipe)
+search   : Panel elasticDS TimeSeries ; search   = ...
+
+tela : TilingOf AnyPanel viewport
+tela = tile (□ budget) ↔ tile (□ logTable) ↔ tile (□ search)
+```
+
+Ogni datasource porta il proprio `render` e il proprio `faithful?`: una
+pipe Loquel fuori dal frammento LogQL può comunque essere fedele a
+Elastic, e viceversa. La fedeltà è valutata **per panel sul datasource di
+quel panel** — esempi reali in `Examples/TelaMista.agda` e
+`Examples/TelaMulti.agda`.
+
 ### Template variables
 
-`Variable` rappresenta un placeholder che Grafana sostituisce a runtime
-nelle query (tipologia MVP: `custom`, lista esplicita di valori). Si
-referenzia in PromQL con `varRef`:
+`Variable` è il riferimento backend-agnostico. Due forme:
+
+```agda
+data VarSpec : Set where
+  customSpec : List⁺ String → VarSpec                   -- lista di valori
+  querySpec  : (sourceGrafanaType fld : String)
+             → (multi includeAll : Bool) → VarSpec      -- terms su un campo
+
+mkVariable      : String → List⁺ String → Variable               -- custom
+mkQueryVariable : (name src fld : String) (multi inc : Bool) → Variable
+varRef          : Variable → String                              -- "$name"
+```
+
+#### Custom — lista esplicita di valori
 
 ```agda
 serviceVar : Variable
 serviceVar = mkVariable "service"
   ("frontend" ∷ "backend" ∷ "api" ∷ [])
 
-errori : Panel miaApp TimeSeries
+errori : Panel promApp TimeSeries
 errori = timeseries "Errori / s"
   (rate (range
     ("http_requests_errors_total{service=\"" ++ varRef serviceVar ++ "\"}")
-    5))
+    [] 5))
 
-salute = mkDashboard "Salute API" "salute-api"
-                     (serviceVar ∷ [])    -- ← registrata nelle variables
-                     viewport tela
+salute = mkDashboard "Salute API" "salute-api" (serviceVar ∷ []) viewport tela
 ```
 
-Il renderer emette il blocco `templating.list` nel JSON; Grafana mostra
-il selettore in alto alla dashboard e sostituisce `$service` con il
-valore scelto prima dell'invio della query a Prometheus.
+#### Tipizzata via Loquel — `_==ᵛ_` su campi `.keyword`
 
-Il binder `forEach` lega la variabile localmente, utile quando i panel
-sono definiti inline e devono catturare la variabile:
+Per i datasource Loquel (Loki / Elastic) la variabile può essere
+**ancorata allo schema**: il record `Var s` porta la prova che il campo
+esiste ed è un campo esatto (suffisso `.keyword`). Un riferimento a un
+campo inesistente o di testo libero non typeckecka.
+
+```agda
+envVar : Var beSchema
+envVar = mkVar "env" "Env.keyword" env∈ true true   -- multi=true, includeAll=true
+
+esPipe : Pipe beSchema beSchema
+esPipe = filterp (env∈ ==ᵛ envVar)   -- ⇒ `term: { "Env.keyword": "$env" }`
+
+esPanel : Panel elasticDS TimeSeries
+esPanel = record
+  { title   = "Activity by env"
+  ; targets = mkTarget (rangeT esPipe MCount [] "5m") nothing false tt ∷ []
+  ; vars    = elasticVar envVar ∷ []          -- registrazione opaca
+  }
+```
+
+`elasticVar` (o `lokiVar`) inietta `Var s` nella forma `Variable`
+backend-agnostica: il datasource Grafana viene timbrato (`elasticsearch` /
+`loki`), tutto il resto è derivato dal record.
+
+#### Tipizzata via HenQL — `_=ᵛ_` come label matcher PromQL
+
+In posizione di label matcher, una variabile produce un `Matcher` con la
+semantica multi/all di PromQL:
+
+```agda
+healthMatchers : List (Matcher beModel)
+healthMatchers =
+    mkMatcher "SourceService" meq "BeAccounts"
+  ∷ ("Env" =ᵛ envVar)                            -- multi=true ⇒ Env=~"$env"
+  ∷ mkMatcher "Status"        meq "FAIL"
+  ∷ []
+
+panel47Expr =
+  sumBy ("Name" ∷ [])
+    (changes
+      (rangeS "health_checks_count" healthMatchers "$__interval"))
+
+-- → sum by (Name) (changes(
+--     health_checks_count{SourceService="BeAccounts",Env=~"$env",Status="FAIL"}
+--     [$__interval]))
+```
+
+`multi=true` ⇒ `=~` (Grafana sostituisce `v₁|v₂` con regex → disgiunzione
+esatta). `multi=false` ⇒ `=` (uguaglianza esatta). `includeAll` non è nel
+matcher: chi lo vuole usa `allValue=".*"` lato Grafana, o omette il
+matcher.
+
+#### Sharing cross-backend con ben-formazione
+
+Una **stessa** `Variable` può essere referenziata da panel ES e da panel
+Prometheus nella stessa dashboard. Il render walka la tela, raccoglie
+`Panel.vars` da ogni panel, e dedupplica per nome → una sola voce nel
+blocco `templating`.
+
+Due dichiarazioni con lo stesso `name` ma `spec` divergenti (es. multi
+discordante, o `fld` diverso) fanno ridurre `varsConsistentB` a `false`:
+la dashboard **non typeckecka**. La negative case è documentata in
+`Examples/TelaCondivisa.agda`.
+
+#### `forEach` — binder locale
 
 ```agda
 salute = forEach "service" ("frontend" ∷ "backend" ∷ []) λ service →
-  mkDashboard "Salute API" "salute-api" [] viewport tela (decora-of service)
-  where
-    decora-of : Variable → Leaf tela → AnyPanel miaApp
-    decora-of v (topL (leftL here))  = □ (errori-of v)
-    -- ...
-    errori-of : Variable → Panel miaApp TimeSeries
-    errori-of v = timeseries "Errori / s"
-      (rate (range ("http_requests_errors_total{service=\"" ++ varRef v ++ "\"}") 5))
+  mkDashboard "Salute API" "salute-api" [] viewport (tela-of service)
 ```
 
-`forEach` pre-pende la variabile alla lista; più `forEach` in cascata
-le accumulano nella stessa dashboard.
+`forEach` pre-pende la variabile alla lista di dashboard; più `forEach`
+in cascata le accumulano.
 
 > Lo zucchero in `Penelope.Sugar` è interamente fatto di definizioni
-> sull'algebra esistente (riducono a `mkPanel`, `hcut`, `vcut`, `Σ._,_`).
+> sull'algebra esistente (riducono a `mkPanel`, `hcut`, `vcut`, `□_`).
 > Nessun nuovo data type, nessuna prova ulteriore: gli invarianti di
-> `Tiling` e `Panel` sono ereditati. Se volessi controllo fine, puoi
-> ignorare `Sugar` e scrivere `mkPanel`/`hcut`/`vcut` direttamente.
+> `Tiling`, `Panel` e `Dashboard.wf` sono ereditati. Se volessi controllo
+> fine, puoi ignorare `Sugar` e scrivere `mkPanel`/`hcut`/`vcut`
+> direttamente.
 
 ### Come sviluppatore di Penelope
 
 ```bash
 git clone https://github.com/avit-io/penelope
 cd penelope
-nix develop                # Agda 2.8 + stdlib 2.3 + prometea + henql in scope
-agda Penelope/JSON.agda    # typecheck completo
-agda Examples/Tela.agda    # typecheck dell'esempio
+nix develop                            # Agda 2.8 + stdlib + prometea + henql + loquel
+agda Penelope/JSON.agda                # typecheck completo
+agda Examples/Tela.agda                # esempio base
+agda Examples/TelaCondivisa.agda       # dashboard mista con var condivisa
 ```
 
 ---
@@ -275,22 +439,39 @@ agda Examples/Tela.agda    # typecheck dell'esempio
 ```
 penelope/
 ├── Penelope/
-│   ├── Tiling.agda      # GEOMETRIA — Tiling (C : Set), Leaf, place,
-│   │                    #   contained, disjoint, VStack/HStack
-│   │                    #   (content-polimorfo, no import di Grafana)
-│   ├── Panel.agda       # PanelKind (TimeSeries/Stat/Gauge/BarGauge/Table)
-│   │                    #   queryTypeOf · Panel · AnyPanel
-│   ├── Variable.agda    # Variable · varRef (template variables custom)
-│   ├── Dashboard.agda   # DECORAZIONE — istanzia C := AnyPanel M
-│   ├── JSON.agda        # renderDashboard — gridPos dal walk del Tiling
-│   └── Sugar.agda       # ZUCCHERO — □_ · per-kind · ↕/↔ · Widget ·
-│                        #   rows/cols n-ari · stackH/stackW · forEach
+│   ├── Tiling.agda           # GEOMETRIA — Tiling (C : Set ℓ), Leaf, place,
+│   │                         #   contained, disjoint (universe-polimorfo,
+│   │                         #   zero import Grafana)
+│   ├── Panel.agda            # PanelKind (TimeSeries/Stat/Gauge/BarGauge/
+│   │                         #   Table/StatusHistory)
+│   ├── Query.agda            # QueryLang — astrazione backend (Ctx,
+│   │                         #   QueryType, Query, queryTypeOf)
+│   ├── Datasource.agda       # Datasource — lang + ctx + grafanaType +
+│   │                         #   render + faithful? (per-panel)
+│   ├── Variable.agda         # Variable · VarSpec (custom/query) ·
+│   │                         #   varsConsistentB · varRef
+│   ├── Backend/
+│   │   ├── Prometheus.agda   # HenQL adapter — prometheus M : Datasource,
+│   │   │                     #   _=ᵛ_ label matcher (= / =~)
+│   │   └── Loquel.agda       # Loquel adapter — loki/elastic : Schema → DS,
+│   │                         #   Var s typed (.keyword), _==ᵛ_
+│   ├── Dashboard.agda        # DECORAZIONE — Target/Panel/AnyPanel +
+│   │                         #   Dashboard con wf su variabili
+│   ├── JSON.agda             # renderDashboard — gridPos dal walk del Tiling
+│   └── Sugar.agda            # ZUCCHERO — □_ · per-kind · ↕/↔ · Widget ·
+│                             #   rows/cols n-ari · forEach
 ├── Examples/
-│   ├── Tela.agda        # esempio base: 3 panel, tassellamento, render
-│   ├── RED.agda         # RED — N servizi × (rate, errors, duration)
-│   └── SLO.agda         # SLO — N servizi × (SLI, budget, burn, trend)
-├── penelope.agda-lib    # depend: standard-library prometea henql
-└── flake.nix            # packages.lib · lib.mkShell · devShells.default
+│   ├── Tela.agda             # esempio base: 3 panel Prometheus
+│   ├── TelaLog.agda          # Loquel: stessa pipe su Loki e su Elastic
+│   ├── TelaMista.agda        # Prometheus + Loki nella stessa tela
+│   ├── TelaMulti.agda        # multi-target per panel
+│   ├── TelaVars.agda         # variabili tipate Loquel (_==ᵛ_)
+│   ├── TelaPromVars.agda     # panel-47 PromQL con _=ᵛ_ e changes
+│   ├── TelaCondivisa.agda    # UNA variabile env condivisa fra ES e Prom
+│   ├── RED.agda              # RED — N servizi × (rate, errors, duration)
+│   └── SLO.agda              # SLO — N servizi × (SLI, budget, burn, trend)
+├── penelope.agda-lib         # depend: standard-library prometea henql loquel
+└── flake.nix                 # packages.lib · lib.mkShell · devShells.default
 ```
 
 Il flake espone:
@@ -299,7 +480,7 @@ Il flake espone:
 |---|---|
 | `packages.lib` | la libreria Agda come derivazione Nix |
 | `packages.default` | stesso di `lib` |
-| `lib.mkShell` | devShell consumer con stdlib + prometea + henql + penelope |
+| `lib.mkShell` | devShell consumer con stdlib + prometea + henql + loquel + penelope |
 | `devShells.default` | devShell per sviluppare Penelope stessa |
 
 ---
@@ -307,82 +488,84 @@ Il flake espone:
 ## Relazione con l'ecosistema
 
 ```
-Prometea.Core          ← Model · PromType · Denote
+Prometea.Core               ← Model · PromType · Denote
+HenQL.Syntax / HenQL.Print  ← Expr · Matcher · prettyExpr (PromQL backend)
+Loquel.Schema / Loquel.Pipe ← Schema · Pipe · render LogQL / Elastic
      │
-     │  open import Prometea.Core
      ▼
-HenQL.Syntax           ← data Expr (M : Model) : PromType → Set
-HenQL.Print            ← prettyExpr : Expr M τ → String
-     │
-     │  open import HenQL.Syntax / HenQL.Print
-     ▼
-Penelope.Tiling        ← Tiling (C : Set), content-polimorfo
-                         (livello geometrico, zero import Grafana)
-Penelope.Panel         ← PanelKind (TimeSeries/Stat/Gauge/BarGauge/Table)
-                         queryTypeOf · Panel M k · AnyPanel M
-Penelope.Variable      ← Variable · varRef (template variables custom)
-Penelope.Dashboard     ← Dashboard M (istanzia C := AnyPanel M)
-Penelope.JSON          ← renderDashboard → Grafana JSON (con templating)
-Penelope.Sugar         ← □_ · per-kind · ↕/↔ · Widget · rows/cols ·
-                         forEach (zucchero, riduce ai costruttori)
+Penelope.Query              ← QueryLang (Ctx, QueryType, Query, queryTypeOf)
+Penelope.Datasource         ← Datasource (lang + ctx + grafanaType + render + faithful?)
+Penelope.Panel              ← PanelKind (incl. StatusHistory)
+Penelope.Variable           ← Variable · VarSpec (custom/query) · varsConsistentB
+Penelope.Backend.Prometheus ← prometheus M : Datasource, _=ᵛ_ matcher
+Penelope.Backend.Loquel     ← loki/elastic : Schema → DS, Var s, _==ᵛ_
+Penelope.Tiling             ← Tiling (C : Set ℓ), content-polimorfo
+Penelope.Dashboard          ← Target · Panel ds k · AnyPanel · Dashboard wf
+Penelope.JSON               ← renderDashboard → Grafana JSON
+Penelope.Sugar              ← □_ · per-kind · ↕/↔ · Widget · rows/cols · forEach
 ```
 
-Penelope dipende da HenQL per le query e da Prometea per `Model`. Non sa
-nulla di Agdovana — sono progetti sorella che consumano gli stessi tipi
-fondazionali per fini diversi (Agdovana → regole di alerting,
-Penelope → dashboard).
+Penelope dipende da HenQL+Prometea per il backend Prometheus e da Loquel
+per Loki/Elastic. Non sa nulla di Agdovana — sono progetti sorella che
+consumano gli stessi tipi fondazionali per fini diversi (Agdovana → regole
+di alerting, Penelope → dashboard).
 
 ---
 
 ## Garanzie strutturali
 
-Cinque invarianti, **nessuna prova attaccata, nessun runtime check**.
+**Nessuna prova attaccata, nessun runtime check.**
 
-- **Coerenza panel ↔ query** — `queryTypeOf k` è computato dal kind. Il
-  campo `target : Expr M (queryTypeOf k)` non ammette altri tipi.
-  Sostituire un `TimeSeries` con `Stat` cambia il tipo richiesto della
-  target; il typechecker rifiuta il sito di costruzione.
+- **Coerenza panel ↔ query ↔ datasource** — `queryTypeOf k` è una proprietà
+  del backend (`QueryLang.queryTypeOf`). Il campo `query : Query lang ctx
+  (queryTypeOf k)` di `Target ds k` non ammette altri tipi. Sostituire un
+  `TimeSeries` con `Stat` cambia il tipo richiesto della query; il
+  typechecker rifiuta il sito di costruzione.
+- **Fedeltà al frammento del backend** — ogni `Target` porta `ok : T
+  (faithful? ds query)`. Per HenQL il predicato è vacuamente `true`; per
+  Loquel-LogQL e Loquel-Elastic è il predicato del frammento renderizzabile.
+  Una pipe fuori dal frammento del datasource scelto non typeckecka su
+  quel panel.
 - **Min-size definizionale** — i cut di `Tiling` hanno sotto-dimensioni
   `suc`-indicizzate. Una cella di altezza 0 o larghezza 0 non è
   rappresentabile. Nessun `h = 0` può finire nel `gridPos` emesso.
 - **Foglie disgiunte** — dimostrato come lemma `disjoint` nel modulo
   `Tiling`. Due foglie distinte di un tassellamento occupano sempre
-  rettangoli `Disjoint`. La prova segue per induzione strutturale sul
-  Tiling e si chiude con `≤-refl` ai confini dei tagli.
+  rettangoli `Disjoint`.
 - **Foglie contenute nel viewport** — dimostrato come lemma `contained`.
   Ogni foglia piazzata è `⊆` il rettangolo del Tiling.
-- **Coerenza del modello** — `Dashboard M` ha un solo `M`. Tutti i panel
-  condividono lo stesso modello semantico (`AnyPanel M = Σ PanelKind
-  (Panel M)`). Non puoi mescolare panel di modelli diversi.
+- **Coerenza delle variabili condivise** — `Dashboard.wf : T
+  (varsConsistentB (collectPanelVars tiling ++ variables))`. Due
+  riferimenti con lo stesso `name` ma `spec` divergente (es. `multi`
+  discordante, `fld` diverso, `sourceGrafanaType` diverso) rifiutano il
+  typecheck (`T false ≡ ⊥`). Convalida cross-backend: una `env`
+  referenziata da ES con `multi=true` non può coesistere con una `env`
+  referenziata da Prometheus con `multi=false`.
+- **Variabili Loquel ancorate allo schema** — `Var s` porta la prova
+  `fieldProof : (fld , TStr) ∈ s` e `keywordOK : T (endsKeyword fld)`.
+  Un campo inesistente, o un campo che non termina in `.keyword`, rifiuta
+  il typecheck (uguaglianza esatta su testo libero in Elastic non sarebbe
+  fedele).
 
-`renderDashboard : Dashboard M → String` è **totale**. Nessun caso
-parziale, nessuna eccezione runtime. La tela tessuta è sempre JSON
-sintatticamente valido, con `gridPos` validi per costruzione.
-
-Per i consumer che vogliono ragionare sull'output:
-
-```agda
-renderDashboardCertified
-  : (d : Dashboard M)
-  → String
-  × Σ (List Rect) (λ rs → All (_⊆ viewport d) rs × Pairwise Disjoint rs)
-```
-
-restituisce, insieme al JSON, la lista dei `Rect` piazzati con due
-prove list-level: tutti contenuti nel viewport (`All ⊆`), pairwise
-disgiunti (`Pairwise Disjoint`). Le prove sono derivate dai lemmi
-geometrici di `Tiling`, non da una verifica a runtime.
+`renderDashboard : Dashboard → String` è **totale**. Nessun caso parziale,
+nessuna eccezione runtime. La tela tessuta è sempre JSON sintatticamente
+valido, con `gridPos` validi per costruzione, e variabili dedupplicate
+nel blocco `templating`.
 
 ### Cosa NON è garantito
 
 - **Tassellamenti non-guillotine** — Penelope copre gli slicing floorplan.
   Il pinwheel a 5 rettangoli, le partizioni a T-shape e altri layout
   che richiedono un taglio non-completo non sono esprimibili. È una
-  scelta di scope: la classe coperta è chiusa, semplice da ragionare,
-  e copre il 99% dei layout Grafana realmente usati.
+  scelta di scope.
 - **Viewport non vuoto** — `tile` accetta `Tiling x y 0 0`. Se passi un
   viewport con `w = 0` o `h = 0`, il rendering emette un canvas vuoto.
   Convenzione consumer-side; nessun cost-of-living per la libreria.
+- **Esistenza delle label PromQL** — le label di Prometheus sono APERTE:
+  Penelope verifica che il matcher sia ben formato sul nome, ma non
+  garantisce che la metrica abbia effettivamente quella label. Per
+  Loquel/Elastic la garanzia c'è (lo schema lo impone); per
+  Loquel/Prometheus no.
 
 ---
 
@@ -390,20 +573,40 @@ geometrici di `Tiling`, non da una verifica a runtime.
 
 In ordine di valore concreto:
 
-1. **Template variables — tipologie oltre `custom`** — oggi `Variable`
-   espone solo la tipologia Grafana `custom` (lista esplicita di valori).
-   Da aggiungere: `query` (label_values via PromQL), `interval` (durate),
-   `constant`, `text`, `datasource`. Implementabili come somma sui
-   `VarSpec` senza toccare il render del blocco `templating`.
-2. **Datasource non-Prometheus** — Penelope oggi assume `prometheus`.
-   Astrarre `Datasource` parallelo a `Model` per Loki, Tempo, ecc.
+1. **Template variables — tipologie oltre `custom` e `query`** —
+   `Variable` espone oggi `customSpec` (lista esplicita) e `querySpec`
+   (terms su un campo). Da aggiungere: `interval` (durate), `constant`,
+   `text`, `datasource`. Implementabili come somma sui `VarSpec` senza
+   toccare l'algebra dei riferimenti `_==ᵛ_` / `_=ᵛ_`.
+2. **Datasource oltre Prometheus / Loki / Elastic** — Tempo, ClickHouse,
+   Postgres. Astrazione `QueryLang` già pronta: ogni nuovo backend è una
+   record + un Datasource fabbrica.
 3. **Layout proof come API standard** — oggi `renderDashboardCertified`
    espone `Σ (List Rect) (All ⊆ × Pairwise Disjoint)` come ritorno
    esplicito. La prossima iterazione è promuovere quella variante a
    `renderDashboard` di default e deprecare la versione non-certificata.
 
-### Già implementati come derivazioni geometriche
+### Già implementati
 
+- **Datasource per-panel** — `Datasource` è una record (`lang : QueryLang`,
+  `ctx`, `grafanaType`, `render`, `faithful?`). `Panel` è indicizzato sul
+  datasource; `AnyPanel` lo impacchetta esistenzialmente. Dashboard mista
+  Prometheus + Loki + Elastic in `Examples/TelaMista.agda` e
+  `TelaMulti.agda`.
+- **Backend Prometheus (HenQL)** — `prometheus M : Datasource` con
+  `render = prettyExpr` e `faithful? = const true`. Label matcher su
+  variabile con `_=ᵛ_` (semantica `=` / `=~` da `multi`).
+- **Backend Loquel (Loki, Elastic)** — `loki s`, `elastic s` con i propri
+  `faithful?` (frammento LogQL vs frammento Elastic). Variabili tipate
+  `Var s` con prova di esistenza del campo e suffisso `.keyword`;
+  combinatore `_==ᵛ_` produce filtro `var f ≡ᵉ lit "$name"` (fedele a
+  entrambi i frammenti).
+- **`StatusHistory` come PanelKind** — mappato a `rangeM` (Loquel) e
+  `InstantVector` (HenQL); render JSON `"status-history"`.
+- **Variabili condivise cross-backend** — `Dashboard.wf` impone la
+  coerenza per nome sull'unione `collectPanelVars tiling ++ variables`.
+  La negative case (multi divergente) è documentata in
+  `Examples/TelaCondivisa.agda`.
 - **`vstack` / `hstack` n-ari** — fold di `hcut` / `vcut` su una pila
   tipata di sotto-Tilings. Disgiuntezza ereditata: il Tiling risultante
   è un BSP regolare, i lemmi `disjoint` e `contained` si applicano senza
@@ -412,30 +615,20 @@ In ordine di valore concreto:
   `(ht hb)` con la proporzione desiderata. Es. `hcut {ht = 9} {hb = 5}`
   per ~63% / 37% su altezza 16. Le proporzioni vivono nello shape.
 - **Zucchero in `Penelope.Sugar`** — `□_`, costruttori per-kind
-  (`timeseries`/`stat`/`gauge`/`table`), e infissi `↕`/`↔` come alias di
-  `hcut`/`vcut`. Tutto fatto di definizioni sull'algebra: nessun nuovo
-  data type, invarianti ereditati. Il single-expression senza
-  annotazioni *non* funziona — l'unificatore di Agda non inverte
-  `suc n + suc n ≡ 16` per `n` libero — quindi i bracci dei cut hanno
-  bisogno di tipi annotati (`where`-clauses). Il livello `Sugar`
-  function-based su un viewport (per il sogno "stile old Layout M")
-  e i combinatori n-ari `rows` / `cols` per la decomposizione equa
-  vivono in roadmap.
-- **Template variables (custom MVP)** — `Variable` con `name` e
-  `options : List⁺ String`, registrata in `Dashboard.variables`, emessa
-  nel blocco `templating.list`. `varRef` produce `$varname` da iniettare
-  nelle stringhe PromQL. Binder `forEach` per legare la variabile nel
-  corpo della dashboard. Le tipologie Grafana oltre `custom` (`query`,
-  `interval`, `constant`, `text`, `datasource`) restano in roadmap.
-- **Widget e combinatori n-ari** — `Widget C w h = ∀ {x y} → Tiling C x y w h`
-  (position-independent). `rows`/`cols` su `Vec` decompongono equamente
-  con `stackH`/`stackW` (formulate in suc-forma definizionale per
-  permettere ad Agda di unificare `t ↕ rows ...` senza rewrite). Esempi
-  reali in `Examples/RED.agda` (4 servizi × rate/errors/duration) e
-  `Examples/SLO.agda` (4 servizi × SLI/budget/burn/trend).
-- **HenQL esteso** — `histogramQuantile`, `_÷_`, `_-_`, `litVec`,
-  `toScalar` necessari per gli SLO. Pretty-print emette PromQL
-  standard (`scalar()`, `histogram_quantile()`, ecc.).
+  (`timeseries`/`stat`/`gauge`/`bargauge`/`table`), e infissi `↕`/`↔`
+  come alias di `hcut`/`vcut`. Tutto fatto di definizioni sull'algebra:
+  nessun nuovo data type, invarianti ereditati. Universe-polimorfo in
+  `C : Set ℓ` per ospitare `AnyPanel : Set₂`.
+- **Widget e combinatori n-ari** — `Widget C w h = ∀ {x y} → Tiling C x y
+  w h` (position-independent). `rows`/`cols` su `Vec` decompongono
+  equamente con `stackH`/`stackW` (formulate in suc-forma definizionale
+  per permettere ad Agda di unificare `t ↕ rows ...` senza rewrite).
+  Esempi reali in `Examples/RED.agda` e `Examples/SLO.agda`.
+- **HenQL esteso** — `Matcher` strutturato (`=` / `=~`), `metricSel`,
+  `rangeS` (con finestra), `changes` (range-vector function),
+  `histogramQuantile`, `_÷_`, `_-_`, `litVec`, `toScalar`,
+  `$__interval` come finestra accettata. Pretty-print emette PromQL
+  standard.
 
 ---
 
