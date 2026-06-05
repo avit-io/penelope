@@ -27,7 +27,7 @@ open import Penelope.Tiling
 open import Penelope.Variable
 
 open import Data.Bool          using (T; Bool; false)
-open import Data.List          using (List)
+open import Data.List          using (List; [])
 open import Data.List.NonEmpty using (List⁺; [_])
 open import Data.Maybe         using (Maybe; nothing)
 open import Data.String        using (String)
@@ -45,15 +45,20 @@ record Target (ds : Datasource) (k : PanelKind) : Set where
     ok     : T (Datasource.faithful? ds query)
 
 -- Un panel sotto un datasource specifico, con lista NON VUOTA di target.
+-- `vars` registra le variabili di dashboard referenziate dai target del
+-- panel (i.e. quelle prodotte da `_==ᵛ_` nell'adapter Loquel). Sono
+-- opache qui — il render le raccoglie e dedupplica per nome.
 record Panel (ds : Datasource) (k : PanelKind) : Set where
   constructor mkPanel
   field
     title   : String
     targets : List⁺ (Target ds k)
+    vars    : List Variable
 
 -- Convenience: un panel single-target. L'`ok` è implicito perché per i
 -- frammenti vacui (Prometheus) `T true` riduce a `⊤` che ha eta;
--- per Loquel l'utente lo passa esplicitamente come `{ok = tt}`.
+-- per Loquel l'utente lo passa esplicitamente come `{ok = tt}`. Nessuna
+-- variabile referenziata (`vars = []`).
 mkPanel1 : ∀ {ds k}
          → (title : String)
          → (q : QueryLang.Query (Datasource.lang ds) (Datasource.ctx ds)
@@ -63,6 +68,7 @@ mkPanel1 : ∀ {ds k}
 mkPanel1 {ds} {k} t q {ok} = record
   { title   = t
   ; targets = [ mkTarget q nothing false ok ]
+  ; vars    = []
   }
 
 -- Esistenziale sul datasource (e sul kind).

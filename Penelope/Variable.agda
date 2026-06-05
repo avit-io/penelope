@@ -3,28 +3,42 @@
 module Penelope.Variable where
 
 -- ╔════════════════════════════════════════════════════════════════════╗
--- ║  Template variables — placeholder che il consumer Grafana sceglie ║
--- ║  a runtime per parametrizzare le query di tutta la dashboard.      ║
+-- ║  Template variables — placeholder che Grafana sostituisce a        ║
+-- ║  runtime per parametrizzare le query.                              ║
 -- ║                                                                    ║
--- ║  Tipologia MVP: "custom" — lista esplicita di valori. Le altre     ║
--- ║  tipologie Grafana (query / interval / constant / text /           ║
--- ║  datasource) vivono in roadmap.                                    ║
+-- ║  Due forme:                                                        ║
+-- ║   • customSpec : lista esplicita di valori ("custom").             ║
+-- ║   • querySpec  : terms-query su un campo + flag multi/includeAll   ║
+-- ║                  ("query"). È la forma emessa dai riferimenti      ║
+-- ║                  tipati `Var s` dell'adapter Loquel.               ║
 -- ║                                                                    ║
--- ║  La sostituzione `$varname → valore` avviene a livello Grafana     ║
--- ║  prima dell'invio a Prometheus. Penelope emette il nome `$varname` ║
--- ║  nella stringa PromQL via `varRef`; non fa sostituzione lato Agda. ║
+-- ║  La sostituzione `$name → valore` avviene lato Grafana; Penelope   ║
+-- ║  emette solo il sentinella `$name` via `varRef`.                   ║
 -- ╚════════════════════════════════════════════════════════════════════╝
 
+open import Data.Bool          using (Bool)
 open import Data.List.NonEmpty using (List⁺)
 open import Data.String        using (String; _++_)
 
-record Variable : Set where
-  constructor mkVariable
-  field
-    name    : String
-    options : List⁺ String
+data VarSpec : Set where
+  customSpec : List⁺ String → VarSpec
+  querySpec  : (fld : String) (multi includeAll : Bool) → VarSpec
 
--- Riferimento alla variabile in una stringa PromQL: `$varname`.
--- Grafana sostituisce con il valore corrente al render del panel.
+record Variable : Set where
+  constructor mkVariable′
+  field
+    name : String
+    spec : VarSpec
+
+-- ── Smart constructor compat: la forma "custom" mantiene il vecchio
+-- ── signature `mkVariable name options`.
+mkVariable : String → List⁺ String → Variable
+mkVariable n opts = record { name = n ; spec = customSpec opts }
+
+-- ── Query variable: terms su `fld`, multi/includeAll.
+mkQueryVariable : (name fld : String) (multi includeAll : Bool) → Variable
+mkQueryVariable n f m a = record { name = n ; spec = querySpec f m a }
+
+-- ── Riferimento `$name` per sostituzione testuale (PromQL, titoli, …).
 varRef : Variable → String
 varRef v = "$" ++ Variable.name v

@@ -24,11 +24,15 @@ module Penelope.Backend.Loquel where
 -- ╚════════════════════════════════════════════════════════════════════╝
 
 open import Level                       using (Level; Lift; lift; lower)
-open import Data.Bool                   using (Bool)
-open import Data.List                   using (List)
-open import Data.String                 using (String)
+open import Data.Bool                   using (Bool; true; false; T; _∧_)
+open import Data.Char.Base              using (Char)
+open import Data.List.Base              using (List; []; _∷_; reverse)
+open import Data.List.Membership.Propositional using (_∈_)
+open import Data.Product.Base           using (_,_)
+open import Data.String                 using (String; _++_; toList)
 
-open import Loquel.Schema               using (Schema)
+open import Loquel.Schema               using (Schema; Ty; TStr; TBool)
+open import Loquel.Expr                 using (Expr; var; lit; _≡ᵉ_)
 open import Loquel.Pipe                 using (Pipe)
 open import Loquel.Render.LogQL         using (renderLogQL; MetricKind;
                                                LogQLWindow; renderMetricLogQL)
@@ -39,6 +43,7 @@ open import Loquel.Render.JSON          using (serialize)
 open import Penelope.Panel
 open import Penelope.Query
 open import Penelope.Datasource
+open import Penelope.Variable           using (Variable; mkQueryVariable)
 
 -- I tre ruoli che una query Loquel ricopre in un panel.
 data LQKind : Set where
@@ -128,3 +133,72 @@ elastic s = record
   ; render      = renderElasticS
   ; faithful?   = faithfulElastic?B
   }
+
+-- ╔════════════════════════════════════════════════════════════════════╗
+-- ║  Variabili di dashboard ANCORATE allo schema Loquel.               ║
+-- ║                                                                    ║
+-- ║  `Var s` è la dichiarazione TIPATA di una variabile: porta con sé  ║
+-- ║  la prova che il campo `fieldName` esiste in `s` e che è un campo  ║
+-- ║  esatto (suffisso ".keyword"). Una variabile su un campo           ║
+-- ║  inesistente (Test negativo 1) o su un campo di testo libero      ║
+-- ║  (Test negativo 2) non typeckecka.                                 ║
+-- ║                                                                    ║
+-- ║  Il combinatore `_==ᵛ_` produce un filtro Loquel `var f ≡ᵉ lit     ║
+-- ║  "$name"`: per render/faithful? è un'uguaglianza esatta su campo   ║
+-- ║  TStr, quindi NEL FRAMMENTO FEDELE. Per Grafana è un sentinella    ║
+-- ║  che verrà sostituito a view-time.                                 ║
+-- ║                                                                    ║
+-- ║  POLICY analizzato→esatto: l'utente deve referenziare il campo     ║
+-- ║  `.keyword` (es. "LoggerLevel.keyword") perché è quello su cui     ║
+-- ║  l'uguaglianza esatta resta fedele in Elastic. I campi senza       ║
+-- ║  suffisso ".keyword" sono trattati come testo libero e rifiutati.  ║
+-- ╚════════════════════════════════════════════════════════════════════╝
+
+-- Predicato decidibile "questa stringa termina in `.keyword`".
+-- Implementato via reverse + pattern match sui chars del suffisso
+-- "drowyek.", così riduce definizionalmente sui literal di stringa.
+private
+  endsKeyword-rev : List Char → Bool
+  endsKeyword-rev ('d' ∷ 'r' ∷ 'o' ∷ 'w' ∷ 'y' ∷ 'e' ∷ 'k' ∷ '.' ∷ _) = true
+  endsKeyword-rev _                                                    = false
+
+endsKeyword : String → Bool
+endsKeyword s = endsKeyword-rev (reverse (toList s))
+
+-- La variabile tipata: dichiarata su uno schema `s`, ancora una prova
+-- di esistenza del campo (`fieldProof`) e una prova che il campo è un
+-- `.keyword` (la prova è implicita e si risolve a `tt` quando il check
+-- riduce a `true`).
+record Var (s : Schema) : Set where
+  constructor mkVar′
+  field
+    name       : String
+    fieldName  : String
+    fieldProof : (fieldName , TStr) ∈ s
+    keywordOK  : T (endsKeyword fieldName)
+    multi      : Bool
+    includeAll : Bool
+
+-- Smart constructor: la prova `keywordOK` è implicita. Sui literal di
+-- stringa con suffisso ".keyword" il check riduce a `true`, l'utente
+-- non passa nulla. Su literal senza ".keyword" il check è `false` e il
+-- typecheck fallisce (Test negativo 2).
+mkVar : ∀ {s} (name fieldName : String)
+        (fieldProof : (fieldName , TStr) ∈ s)
+        (multi includeAll : Bool)
+        {keywordOK : T (endsKeyword fieldName)} → Var s
+mkVar n f p m a {kw} = mkVar′ n f p kw m a
+
+-- Iniezione nella forma opaca usata dal renderer JSON.
+varToVariable : ∀ {s} → Var s → Variable
+varToVariable v = mkQueryVariable (Var.name v) (Var.fieldName v)
+                                   (Var.multi v) (Var.includeAll v)
+
+-- Combinatore: `p ==ᵛ v` è il filtro `var p ≡ᵉ lit "$name"`.
+-- Il campo della prova `p` e quello dichiarato in `v` non sono forzati
+-- a coincidere dal tipo (sarebbe rumoroso): la coerenza è discipline
+-- dell'utente. Le clausole di registrazione passano per `Panel.vars`.
+infix 4 _==ᵛ_
+_==ᵛ_ : ∀ {s f} → (f , TStr) ∈ s → Var s → Expr s TBool
+p ==ᵛ v = var p ≡ᵉ lit ("$" ++ Var.name v)
+

@@ -36,8 +36,11 @@ open import Data.Nat.Show using () renaming (show to showℕ)
 open import Data.String   using (String; _++_; fromList)
 open import Data.Product  using (Σ; _,_; _×_)
 open import Data.List     using (List; []; _∷_)
+                          renaming (_++_ to _++ˡ_)
 open import Data.List.NonEmpty using (List⁺; head; tail)
 open import Data.List.Relation.Unary.All using (All)
+open import Data.String.Properties using () renaming (_≟_ to _≟ˢ_)
+open import Relation.Nullary.Decidable.Core using (does)
 
 private
   nl : String
@@ -138,15 +141,23 @@ private
       go h (v ∷ vs) = h ++ "," ++ go v vs
 
   renderVariable : Variable → String
-  renderVariable v =
-    let opts = Variable.options v
-        h    = head opts in
-    "{ \"name\": \"" ++ Variable.name v ++ "\""               ++
-    ", \"type\": \"custom\""                                  ++
-    ", \"query\": \"" ++ varQueryString opts ++ "\""          ++
-    ", \"current\": { \"text\": \"" ++ h ++ "\", \"value\": \"" ++ h ++ "\" }" ++
-    ", \"options\": " ++ renderVarOptions opts                ++
-    " }"
+  renderVariable v with Variable.spec v
+  ... | customSpec opts =
+        let h = head opts in
+        "{ \"name\": \"" ++ Variable.name v ++ "\""                ++
+        ", \"type\": \"custom\""                                   ++
+        ", \"query\": \"" ++ varQueryString opts ++ "\""           ++
+        ", \"current\": { \"text\": \"" ++ h ++ "\", \"value\": \"" ++ h ++ "\" }" ++
+        ", \"options\": " ++ renderVarOptions opts                 ++
+        " }"
+  ... | querySpec fld multi inc =
+        "{ \"name\": \"" ++ Variable.name v ++ "\""                ++
+        ", \"type\": \"query\""                                    ++
+        ", \"query\": { \"find\": \"terms\", \"field\": \"" ++ fld ++ "\" }" ++
+        ", \"multi\": " ++ showBool multi                          ++
+        ", \"includeAll\": " ++ showBool inc                       ++
+        ", \"allValue\": \"\""                                     ++
+        " }"
 
   joinVars : List Variable → String
   joinVars []           = ""
@@ -156,10 +167,40 @@ private
   renderTemplating : List Variable → String
   renderTemplating vars = "{ \"list\": [" ++ joinVars vars ++ "] }"
 
+-- ─────────────────────────────────────────────────────────────────────
+-- Raccolta delle Variable referenziate dai Panel della tela + dedup
+-- per `name` (prima occorrenza vince).
+-- ─────────────────────────────────────────────────────────────────────
+
+collectPanelVars : ∀ {x y w h} → Tiling AnyPanel x y w h → List Variable
+collectPanelVars (tile ap)    = Panel.vars (AnyPanel.panel ap)
+collectPanelVars (hcut tt tb) = collectPanelVars tt ++ˡ collectPanelVars tb
+collectPanelVars (vcut tl tr) = collectPanelVars tl ++ˡ collectPanelVars tr
+
+private
+  hasName : String → List Variable → Bool
+  hasName _ []       = false
+  hasName n (v ∷ vs) with does (n ≟ˢ Variable.name v)
+  ... | true  = true
+  ... | false = hasName n vs
+
+  dedup : List Variable → List Variable
+  dedup []       = []
+  dedup (v ∷ vs) with hasName (Variable.name v) vs
+  ... | true  = dedup vs
+  ... | false = v ∷ dedup vs
+
+-- Variabili effettive della dashboard: prima i refs raccolti dai panel,
+-- poi gli "extras" di Dashboard.variables (utili per variabili usate
+-- solo nei titoli). Dedupplicate per `name`.
+dashboardVariables : Dashboard → List Variable
+dashboardVariables d =
+  dedup (collectPanelVars (Dashboard.tiling d) ++ˡ Dashboard.variables d)
+
 renderDashboard : Dashboard → String
 renderDashboard d =
   let panels = walk (Dashboard.tiling d)
-      tmpl   = renderTemplating (Dashboard.variables d) in
+      tmpl   = renderTemplating (dashboardVariables d) in
     "{"                                                ++ nl ++
     "  \"title\": \"" ++ Dashboard.title d ++ "\","     ++ nl ++
     "  \"uid\": \"" ++ Dashboard.uid d ++ "\","         ++ nl ++
