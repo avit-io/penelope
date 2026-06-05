@@ -1,13 +1,16 @@
+{-# OPTIONS --safe --without-K #-}
+
 module Penelope.Tiling where
 
 -- ╔════════════════════════════════════════════════════════════════════╗
 -- ║  Livello geometrico — tassellamenti slicing del rettangolo.        ║
 -- ║                                                                    ║
 -- ║  Modulo INDIPENDENTE da Grafana: zero import di Model, PromType,   ║
--- ║  PanelKind. Tiling è parametrico su un contenuto astratto C : Set: ║
--- ║  `tile : C → Tiling C x y w h`. La coerenza del modello vive       ║
--- ║  altrove (Penelope.Dashboard istanzia `C := AnyPanel M`); qui si   ║
--- ║  parla solo di rettangoli e tagli a ghigliottina.                  ║
+-- ║  PanelKind, Datasource. Tiling è parametrico su un contenuto       ║
+-- ║  astratto `C : Set ℓ` a livello arbitrario: la coerenza            ║
+-- ║  panel↔query↔datasource vive altrove (Penelope.Dashboard istanzia  ║
+-- ║  `C := AnyPanel`, che è in Set₂ perché AnyPanel impacca un         ║
+-- ║  Datasource).                                                      ║
 -- ║                                                                    ║
 -- ║  La classe rappresentata sono gli SLICING FLOORPLAN (partizioni    ║
 -- ║  guillotine). Il pinwheel a 5 rettangoli non è esprimibile.        ║
@@ -18,6 +21,8 @@ module Penelope.Tiling where
 -- ║  Min-size DEFINIZIONALE.                                           ║
 -- ╚════════════════════════════════════════════════════════════════════╝
 
+open import Level
+  using (Level)
 open import Data.Nat
   using (ℕ; zero; suc; _+_; _≤_; s≤s; z≤n)
 open import Data.Nat.Properties
@@ -31,6 +36,10 @@ open import Data.List
 open import Data.List.Relation.Unary.All
   using (All; []; _∷_)
 
+private
+  variable
+    ℓ : Level
+
 -- ─────────────────────────────────────────────────────────────────────
 -- Rect: rettangolo posizionato.
 -- ─────────────────────────────────────────────────────────────────────
@@ -41,11 +50,10 @@ record Rect : Set where
 open Rect public
 
 -- ─────────────────────────────────────────────────────────────────────
--- Tiling: slicing floorplan, content-polimorfo. `tile` porta un valore
--- di contenuto C; hcut/vcut combinano sotto-Tilings.
+-- Tiling: slicing floorplan, content-polimorfo *universe-polimorfo*.
 -- ─────────────────────────────────────────────────────────────────────
 
-data Tiling (C : Set) : (x y w h : ℕ) → Set where
+data Tiling (C : Set ℓ) : (x y w h : ℕ) → Set ℓ where
   tile : ∀ {x y w h} → C → Tiling C x y w h
   hcut : ∀ {x y w} {ht hb : ℕ}
        → Tiling C x y w (suc ht)
@@ -56,15 +64,15 @@ data Tiling (C : Set) : (x y w h : ℕ) → Set where
        → Tiling C (x + suc wl) y (suc wr) h
        → Tiling C x y (suc wl + suc wr) h
 
--- Surface wrapper: un Tiling "del" rettangolo r con contenuto C.
-TilingOf : (C : Set) → Rect → Set
+-- Surface wrapper.
+TilingOf : (C : Set ℓ) → Rect → Set ℓ
 TilingOf C r = Tiling C (x r) (y r) (w r) (h r)
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Leaf: indirizzo di una foglia (cella).
 -- ─────────────────────────────────────────────────────────────────────
 
-data Leaf {C : Set} : ∀ {x y w h} → Tiling C x y w h → Set where
+data Leaf {C : Set ℓ} : ∀ {x y w h} → Tiling C x y w h → Set ℓ where
   here   : ∀ {x y w h} {c : C} → Leaf (tile {x = x} {y = y} {w = w} {h = h} c)
   topL   : ∀ {x y w} {ht hb : ℕ}
              {tt : Tiling C x y w (suc ht)}
@@ -84,18 +92,17 @@ data Leaf {C : Set} : ∀ {x y w h} → Tiling C x y w h → Set where
          → Leaf tr → Leaf (vcut tl tr)
 
 -- ─────────────────────────────────────────────────────────────────────
--- place: ogni foglia conosce il proprio rettangolo (derivato dagli ℕ).
--- contentAt: estrae il contenuto C di una foglia.
+-- place / contentAt.
 -- ─────────────────────────────────────────────────────────────────────
 
-place : ∀ {C x y w h} (t : Tiling C x y w h) → Leaf t → Rect
+place : {C : Set ℓ} {x y w h : ℕ} (t : Tiling C x y w h) → Leaf t → Rect
 place {x = x} {y = y} {w = w} {h = h} (tile _) here = mkRect x y w h
 place (hcut tt _ ) (topL  l) = place tt l
 place (hcut _  tb) (botL  l) = place tb l
 place (vcut tl _ ) (leftL l) = place tl l
 place (vcut _  tr) (rightL l) = place tr l
 
-contentAt : ∀ {C x y w h} (t : Tiling C x y w h) → Leaf t → C
+contentAt : {C : Set ℓ} {x y w h : ℕ} (t : Tiling C x y w h) → Leaf t → C
 contentAt (tile c)   here     = c
 contentAt (hcut tt _ ) (topL  l) = contentAt tt l
 contentAt (hcut _  tb) (botL  l) = contentAt tb l
@@ -103,7 +110,7 @@ contentAt (vcut tl _ ) (leftL l) = contentAt tl l
 contentAt (vcut _  tr) (rightL l) = contentAt tr l
 
 -- ─────────────────────────────────────────────────────────────────────
--- Containment: r ⊆ r' significa "r è contenuto in r'".
+-- Containment.
 -- ─────────────────────────────────────────────────────────────────────
 
 record _⊆_ (r r' : Rect) : Set where
@@ -127,10 +134,6 @@ open _⊆_ public
   ; ⊆-xr = ≤-trans (⊆-xr ab) (⊆-xr bc)
   ; ⊆-yb = ≤-trans (⊆-yb ab) (⊆-yb bc)
   }
-
--- ─────────────────────────────────────────────────────────────────────
--- Containment di ogni parte nel suo parent — prove banali sui ≤.
--- ─────────────────────────────────────────────────────────────────────
 
 topPart-⊆ : ∀ x y w ht hb
           → mkRect x y w (suc ht) ⊆ mkRect x y w (suc ht + suc hb)
@@ -168,12 +171,7 @@ rightPart-⊆ x y h wl wr = record
   ; ⊆-yb = ≤-refl
   }
 
--- ─────────────────────────────────────────────────────────────────────
--- Lemma: ogni foglia piazzata è contenuta nel rettangolo del Tiling.
--- (Universalmente quantificato su C : Set.)
--- ─────────────────────────────────────────────────────────────────────
-
-contained : ∀ {C x y w h} (t : Tiling C x y w h) (l : Leaf t)
+contained : {C : Set ℓ} {x y w h : ℕ} (t : Tiling C x y w h) (l : Leaf t)
           → place t l ⊆ mkRect x y w h
 contained (tile _) here = ⊆-refl
 contained {x = x} {y = y} {w = w} (hcut {ht = ht} {hb = hb} tt _ ) (topL l) =
@@ -222,7 +220,7 @@ leftRightPart-Disjoint : ∀ x y h wl wr
                                   (mkRect (x + suc wl) y (suc wr) h)
 leftRightPart-Disjoint x y h wl wr = leftOf ≤-refl
 
-disjoint : ∀ {C x y w h} (t : Tiling C x y w h) (l₁ l₂ : Leaf t)
+disjoint : {C : Set ℓ} {x y w h : ℕ} (t : Tiling C x y w h) (l₁ l₂ : Leaf t)
          → l₁ ≢ l₂ → Disjoint (place t l₁) (place t l₂)
 
 disjoint (tile _) here here neq = ⊥-elim (neq refl)
@@ -252,10 +250,10 @@ disjoint (vcut tl tr) (rightL l₁) (rightL l₂) neq =
   disjoint tr l₁ l₂ (λ eq → neq (cong rightL eq))
 
 -- ─────────────────────────────────────────────────────────────────────
--- Enumerazione delle foglie e packaging list-level (poly in C).
+-- Enumerazione delle foglie e packaging list-level.
 -- ─────────────────────────────────────────────────────────────────────
 
-placedRects : ∀ {C x y w h} → Tiling C x y w h → List Rect
+placedRects : {C : Set ℓ} {x y w h : ℕ} → Tiling C x y w h → List Rect
 placedRects {x = x} {y = y} {w = w} {h = h} (tile _) = mkRect x y w h ∷ []
 placedRects (hcut tt tb) = placedRects tt ++ placedRects tb
 placedRects (vcut tl tr) = placedRects tl ++ placedRects tr
@@ -271,7 +269,7 @@ private
   All-mapAll f []       = []
   All-mapAll f (p ∷ ps) = f p ∷ All-mapAll f ps
 
-placedRects-contained : ∀ {C x y w h} (t : Tiling C x y w h)
+placedRects-contained : {C : Set ℓ} {x y w h : ℕ} (t : Tiling C x y w h)
                       → All (_⊆ mkRect x y w h) (placedRects t)
 placedRects-contained (tile _) = ⊆-refl ∷ []
 placedRects-contained {x = x} {y = y} {w = w} (hcut {ht = ht} {hb = hb} tt tb) =
@@ -298,7 +296,7 @@ private
   Pairwise-++ (rs ∷ pwXs) pwYs (rsY ∷ rsYs) =
     All-++ rs rsY ∷ Pairwise-++ pwXs pwYs rsYs
 
-placedRects-disjoint : ∀ {C x y w h} (t : Tiling C x y w h)
+placedRects-disjoint : {C : Set ℓ} {x y w h : ℕ} (t : Tiling C x y w h)
                      → Pairwise Disjoint (placedRects t)
 placedRects-disjoint (tile _) = [] ∷ []
 placedRects-disjoint {x = x} {y = y} {w = w} (hcut {ht = ht} {hb = hb} tt tb) =

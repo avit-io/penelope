@@ -1,3 +1,5 @@
+{-# OPTIONS --safe --without-K #-}
+
 module Examples.RED where
 
 -- ╔════════════════════════════════════════════════════════════════════╗
@@ -12,6 +14,7 @@ module Examples.RED where
 open import Prometea.Core
 open import HenQL.Syntax
 open import Penelope.Panel
+open import Penelope.Backend.Prometheus
 open import Penelope.Tiling
 open import Penelope.Dashboard
 open import Penelope.JSON
@@ -29,18 +32,18 @@ svc = record { Time = ℕ ; Val = Float ; Series = String }
 
 -- ── Celle RED per servizio (ognuna è Widget 8×4) ──────────────────────
 
-rateCell : String → Widget (AnyPanel svc) 8 4
-rateCell n = tile (□ (timeseries (n ++ " · rate")
+rateCell : String → Widget AnyPanel 8 4
+rateCell n = tile (□ (timeseries {M = svc} (n ++ " · rate")
   (sumBy ("job" ∷ [])
     (rate (range ("http_requests_total{job=\"" ++ n ++ "\"}") 5)))))
 
-errCell : String → Widget (AnyPanel svc) 8 4
-errCell n = tile (□ (timeseries (n ++ " · errors")
+errCell : String → Widget AnyPanel 8 4
+errCell n = tile (□ (timeseries {M = svc} (n ++ " · errors")
   (sumBy ("job" ∷ [])
     (rate (range ("http_requests_total{job=\"" ++ n ++ "\",code=~\"5..\"}") 5)))))
 
-durCell : String → Widget (AnyPanel svc) 8 4
-durCell n = tile (□ (timeseries (n ++ " · p99")
+durCell : String → Widget AnyPanel 8 4
+durCell n = tile (□ (timeseries {M = svc} (n ++ " · p99")
   (histogramQuantile "0.99"
     (sumBy ("le" ∷ [])
       (rate (range
@@ -48,7 +51,7 @@ durCell n = tile (□ (timeseries (n ++ " · p99")
         5))))))
 
 -- ── Una riga RED: cols su 3 celle 8×4 → 24×4 ──────────────────────────
-redRow : String → Widget (AnyPanel svc) 24 4
+redRow : String → Widget AnyPanel 24 4
 redRow n = cols (rateCell n ∷ errCell n ∷ durCell n ∷ [])
 
 -- ── I servizi monitorati ──────────────────────────────────────────────
@@ -56,14 +59,14 @@ servizi : Vec String 4
 servizi = "checkout" ∷ "catalog" ∷ "payments" ∷ "search" ∷ []
 
 -- ── La tela: rows su 4 righe 24×4 → 24×16 ─────────────────────────────
-tela : Widget (AnyPanel svc) 24 16
+tela : Widget AnyPanel 24 16
 tela = rows (map redRow servizi)
 
 -- ── La dashboard ──────────────────────────────────────────────────────
 viewport : Rect
 viewport = mkRect 0 0 24 16
 
-red : Dashboard svc
+red : Dashboard
 red = mkDashboard "RED — Servizi" "red-servizi" [] viewport (tela {0} {0})
 
 -- Il JSON Grafana corrispondente.

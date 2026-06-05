@@ -1,9 +1,24 @@
+{-# OPTIONS --safe --without-K #-}
+
 module Penelope.JSON where
 
-open import Prometea.Core
-open import HenQL.Syntax
-open import HenQL.Print
+-- ╔════════════════════════════════════════════════════════════════════╗
+-- ║  Render totale di una Dashboard in Grafana JSON.                   ║
+-- ║                                                                    ║
+-- ║  Il datasource è PER-PANEL: cammino la tela BSP e per ogni foglia  ║
+-- ║  uso il Datasource impacchettato in AnyPanel per:                  ║
+-- ║   • emettere il campo `datasource.type` (= grafanaType ds);        ║
+-- ║   • renderizzare la target via (Datasource.render ds).             ║
+-- ║                                                                    ║
+-- ║  Resta totale per costruzione: i gridPos derivano dagli implicit   ║
+-- ║  (x y w h) del tile, e i lemmi contained/disjoint in Tiling ci     ║
+-- ║  garantiscono che ogni cella è nel viewport e nessuna si           ║
+-- ║  sovrappone.                                                       ║
+-- ╚════════════════════════════════════════════════════════════════════╝
+
 open import Penelope.Panel
+open import Penelope.Query
+open import Penelope.Datasource
 open import Penelope.Tiling
 open import Penelope.Variable
 open import Penelope.Dashboard
@@ -27,37 +42,34 @@ private
   panelTypeOf BarGauge   = "bargauge"
   panelTypeOf Table      = "table"
 
-  renderTarget : {M : Model} {τ : PromType} → Expr M τ → String
-  renderTarget e = "{ \"expr\": \"" ++ prettyExpr e ++ "\" }"
+  -- Render di un singolo target via il render del Datasource di quel panel.
+  renderTargets : (ap : AnyPanel) → String
+  renderTargets ap =
+    let ds = AnyPanel.ds ap
+        p  = AnyPanel.panel ap in
+    "[{ \"expr\": \""
+      ++ Datasource.render ds (Panel.target p)
+      ++ "\" }]"
 
-  renderTargetTail : {M : Model} {τ : PromType} → List (Expr M τ) → String
-  renderTargetTail []       = ""
-  renderTargetTail (e ∷ es) = ", " ++ renderTarget e ++ renderTargetTail es
-
-  renderTargets : {M : Model} {τ : PromType} → List⁺ (Expr M τ) → String
-  renderTargets ts =
-    "[" ++ renderTarget   (List⁺.head ts)
-        ++ renderTargetTail (List⁺.tail ts)
-        ++ "]"
-
-  renderPanel : {M : Model} → Rect → AnyPanel M → String
-  renderPanel pos (k , mkPanel ti tgs) =
-    "    {"                                                              ++ nl ++
-    "      \"type\": \"" ++ panelTypeOf k ++ "\","                        ++ nl ++
-    "      \"title\": \"" ++ ti ++ "\","                                  ++ nl ++
-    "      \"datasource\": { \"type\": \"prometheus\" },"                 ++ nl ++
+  renderPanel : Rect → AnyPanel → String
+  renderPanel pos ap =
+    let ds = AnyPanel.ds ap
+        k  = AnyPanel.kind ap
+        p  = AnyPanel.panel ap in
+    "    {"                                                                ++ nl ++
+    "      \"type\": \"" ++ panelTypeOf k ++ "\","                          ++ nl ++
+    "      \"title\": \"" ++ Panel.title p ++ "\","                         ++ nl ++
+    "      \"datasource\": { \"type\": \""
+       ++ Datasource.grafanaType ds ++ "\" },"                              ++ nl ++
     "      \"gridPos\": { \"x\": " ++ showℕ (x pos)
                      ++ ", \"y\": " ++ showℕ (y pos)
                      ++ ", \"w\": " ++ showℕ (w pos)
-                     ++ ", \"h\": " ++ showℕ (h pos) ++ " },"            ++ nl ++
-    "      \"targets\": " ++ renderTargets tgs                            ++ nl ++
+                     ++ ", \"h\": " ++ showℕ (h pos) ++ " },"               ++ nl ++
+    "      \"targets\": " ++ renderTargets ap                               ++ nl ++
     "    }"
 
-  -- Walk del Tiling content-polimorfo, istanziato a C := AnyPanel M.
-  -- Ad ogni tile, il payload è il panel da renderizzare; il gridPos è
-  -- derivato dagli implicit (x y w h) del tile.
-  walk : {M : Model} {x y w h : ℕ}
-       → Tiling (AnyPanel M) x y w h → String
+  -- Walk del Tiling content-polimorfo, istanziato a C := AnyPanel.
+  walk : {x y w h : ℕ} → Tiling AnyPanel x y w h → String
   walk {x = x} {y = y} {w = w} {h = h} (tile p) =
     renderPanel (mkRect x y w h) p
   walk (hcut tt tb) = walk tt ++ "," ++ nl ++ walk tb
@@ -106,11 +118,7 @@ private
   renderTemplating : List Variable → String
   renderTemplating vars = "{ \"list\": [" ++ joinVars vars ++ "] }"
 
--- Render totale di una dashboard in Grafana JSON. I gridPos sono validi
--- per costruzione: ogni cella ha w ≥ 1, h ≥ 1, è contenuta nel viewport,
--- e non si sovrappone alle altre (lemmi `contained`/`disjoint` in Tiling).
--- Le template variables vengono emesse nel blocco "templating".
-renderDashboard : {M : Model} → Dashboard M → String
+renderDashboard : Dashboard → String
 renderDashboard d =
   let panels = walk (Dashboard.tiling d)
       tmpl   = renderTemplating (Dashboard.variables d) in
@@ -126,11 +134,12 @@ renderDashboard d =
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Render "certificato": JSON + Σ con prove list-level di contenimento e
--- disgiunzione.
+-- disgiunzione (universalmente quantificate su C := AnyPanel, eredità
+-- diretta dei lemmi in Penelope.Tiling).
 -- ─────────────────────────────────────────────────────────────────────
 
 renderDashboardCertified
-  : {M : Model} (d : Dashboard M)
+  : (d : Dashboard)
   → String
   × Σ (List Rect) (λ rs →
       All (_⊆ Dashboard.viewport d) rs × Pairwise Disjoint rs)

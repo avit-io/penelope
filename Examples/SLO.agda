@@ -1,3 +1,5 @@
+{-# OPTIONS --safe --without-K #-}
+
 module Examples.SLO where
 
 -- ╔════════════════════════════════════════════════════════════════════╗
@@ -14,6 +16,7 @@ module Examples.SLO where
 open import Prometea.Core
 open import HenQL.Syntax
 open import Penelope.Panel
+open import Penelope.Backend.Prometheus
 open import Penelope.Tiling
 open import Penelope.Dashboard
 open import Penelope.JSON
@@ -78,21 +81,21 @@ burnRate s n = toScalar
 
 -- ── Le quattro celle per servizio ─────────────────────────────────────
 
-gaugeCell : SLO → String → Widget (AnyPanel svc) 8 4
+gaugeCell : SLO → String → Widget AnyPanel 8 4
 gaugeCell s n = tile (□ (gauge (n ++ " · SLI") (sli s n)))
 
-budgetCell : SLO → String → Widget (AnyPanel svc) 8 4
+budgetCell : SLO → String → Widget AnyPanel 8 4
 budgetCell s n = tile (□ (bargauge (n ++ " · Budget") (budgetRemaining s n)))
 
-burnCell : SLO → String → Widget (AnyPanel svc) 8 4
+burnCell : SLO → String → Widget AnyPanel 8 4
 burnCell s n = tile (□ (stat (n ++ " · Burn rate") (burnRate s n)))
 
-trendCell : SLO → String → Widget (AnyPanel svc) 24 8
+trendCell : SLO → String → Widget AnyPanel 24 8
 trendCell _ n = tile (□ (timeseries (n ++ " · SLI 30g") (sliTrend n)))
 
 -- ── Widget per servizio: cols dei tre indicatori sopra il trend ───────
 -- 24×4 ↕ 24×8 → 24×12
-sloWidget : SLO → String → Widget (AnyPanel svc) 24 12
+sloWidget : SLO → String → Widget AnyPanel 24 12
 sloWidget s n =
   cols (gaugeCell s n ∷ budgetCell s n ∷ burnCell s n ∷ [])
   ↕ trendCell s n
@@ -102,13 +105,13 @@ servizi : Vec String 4
 servizi = "checkout" ∷ "catalog" ∷ "payments" ∷ "search" ∷ []
 
 -- ── La dashboard: rows su 4 widget 24×12 → 24×48 (= stackH 3 11) ──────
-dash : Widget (AnyPanel svc) 24 48
+dash : Widget AnyPanel 24 48
 dash = rows (map (sloWidget defaultSLO) servizi)
 
 viewport : Rect
 viewport = mkRect 0 0 24 48
 
-slo : Dashboard svc
+slo : Dashboard
 slo = mkDashboard "SLO — Servizi" "slo-servizi" [] viewport (dash {0} {0})
 
 -- Il JSON Grafana corrispondente.

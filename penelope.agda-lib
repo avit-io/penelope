@@ -1,3 +1,3 @@
 name: penelope
 include: .
-depend: standard-library prometea henql
+depend: standard-library prometea henql loquel

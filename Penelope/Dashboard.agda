@@ -1,28 +1,61 @@
+{-# OPTIONS --safe --without-K #-}
+
 module Penelope.Dashboard where
 
-open import Prometea.Core
+-- ╔════════════════════════════════════════════════════════════════════╗
+-- ║  Panel, AnyPanel, Dashboard.                                       ║
+-- ║                                                                    ║
+-- ║  Un Panel è parametrizzato sul SUO Datasource (in Grafana il       ║
+-- ║  datasource è per-panel, non per-dashboard). Il tipo della target  ║
+-- ║  è derivato dal Datasource via il suo QueryLang: l'utente non      ║
+-- ║  sceglie nulla — il typechecker impone Query (lang ds) (ctx ds)    ║
+-- ║  (queryTypeOf (lang ds) k). Il campo `ok` è un T-witness che la    ║
+-- ║  target sta nel frammento fedele del backend: per Prometheus è     ║
+-- ║  vacuo (sempre true → ⊤), per Loquel diventa una ⊥ se la pipe      ║
+-- ║  non è fedele, quindi è un *errore di tipo*.                       ║
+-- ║                                                                    ║
+-- ║  AnyPanel impacchetta esistenzialmente Datasource + PanelKind +    ║
+-- ║  Panel. Tiling è universe-polimorfo, quindi può portare AnyPanel   ║
+-- ║  (che vive a Set₂) come contenuto della tela BSP. Né Layout né     ║
+-- ║  Dashboard hanno parametro Datasource: panel diversi nella stessa  ║
+-- ║  tela possono avere datasource diversi.                            ║
+-- ╚════════════════════════════════════════════════════════════════════╝
+
 open import Penelope.Panel
+open import Penelope.Query
+open import Penelope.Datasource
 open import Penelope.Tiling
 open import Penelope.Variable
+
+open import Data.Bool   using (T)
 open import Data.List   using (List)
 open import Data.String using (String)
 
--- Una dashboard è la decorazione di un tassellamento con panel: geometria
--- (Tiling) + payload (panel nei tile) + eventuali template variables.
---
--- Tiling è content-polimorfo (`Tiling C x y w h`); qui si istanzia
--- `C := AnyPanel M`. Tutti i panel della dashboard condividono lo stesso
--- modello M (coerenza del modello: phantom da AnyPanel M).
---
--- Per costruzione (lemmi disjoint + contained in Tiling, universali su C):
---   • tutti i panel occupano regioni DISGIUNTE del viewport;
---   • nessun panel esce dal viewport;
---   • ogni cella ha w ≥ 1 e h ≥ 1 (suc-indexed nei figli di hcut/vcut).
-record Dashboard (M : Model) : Set where
+-- Un panel sotto un datasource specifico.
+record Panel (ds : Datasource) (k : PanelKind) : Set where
+  constructor mkPanel
+  field
+    title  : String
+    target : QueryLang.Query (Datasource.lang ds) (Datasource.ctx ds)
+               (QueryLang.queryTypeOf (Datasource.lang ds) k)
+    ok     : T (Datasource.faithful? ds target)
+
+-- Esistenziale sul datasource (e sul kind).
+record AnyPanel : Set₂ where
+  constructor anyPanel
+  field
+    ds    : Datasource
+    kind  : PanelKind
+    panel : Panel ds kind
+
+-- La dashboard: viewport + tela BSP + variables. Tiling porta AnyPanel
+-- come contenuto, quindi panel con datasource diversi possono coesistere
+-- nella stessa tela. Non c'è alcun parametro globale.
+record Dashboard : Set₂ where
   constructor mkDashboard
   field
     title     : String
     uid       : String
     variables : List Variable
     viewport  : Rect
-    tiling    : TilingOf (AnyPanel M) viewport
+    tiling    : TilingOf AnyPanel viewport

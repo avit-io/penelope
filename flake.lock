@@ -1,0 +1,193 @@
+{
+  "nodes": {
+    "agda-src-2701": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1726161230,
+        "narHash": "sha256-IupM/HJk1vpHTRWOakYDDliKn+RLzPjNzGlLTlF0CbY=",
+        "owner": "agda",
+        "repo": "agda",
+        "rev": "a6fc20c27ae953149b53a8997ba4a1c8b17d628a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "agda",
+        "ref": "v2.7.0.1",
+        "repo": "agda",
+        "type": "github"
+      }
+    },
+    "agda-src-280": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1751745194,
+        "narHash": "sha256-ysvgf0sum3eH5GwSYYv8kUbJ38x8LZ9UdUaDbVzqAQg=",
+        "owner": "agda",
+        "repo": "agda",
+        "rev": "3d04bacca842729f9c0869b9287256321b5f450f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "agda",
+        "ref": "v2.8.0",
+        "repo": "agda",
+        "type": "github"
+      }
+    },
+    "henql": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "piforge": [
+          "piforge"
+        ],
+        "prometea": [
+          "prometea"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780589836,
+        "narHash": "sha256-9FclUifwOHpiWU76rvnAV51Ta2a04vhXhlfDwOvsrd8=",
+        "owner": "avit-io",
+        "repo": "henql",
+        "rev": "3fcfcc7e704686995eaeea84b39352e7e6311576",
+        "type": "github"
+      },
+      "original": {
+        "owner": "avit-io",
+        "repo": "henql",
+        "type": "github"
+      }
+    },
+    "loquel": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "piforge": [
+          "piforge"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780661521,
+        "narHash": "sha256-GDoIbH6qOVsVSJwVc4i1d4IY8h4PK/72vKZgNYOUxUA=",
+        "owner": "avit-io",
+        "repo": "loquel",
+        "rev": "c19b6b278efe74902c1e064e9c4013f7979d00c6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "avit-io",
+        "repo": "loquel",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1779796641,
+        "narHash": "sha256-ZsIrKmhp4vbBXoXXmR/tBXA/UCsAQiJL9vsgZEduhVY=",
+        "rev": "25f538306313eae3927264466c70d7001dcea1df",
+        "revCount": 913249,
+        "type": "tarball",
+        "url": "https://api.flakehub.com/f/pinned/NixOS/nixpkgs/0.2511.913249%2Brev-25f538306313eae3927264466c70d7001dcea1df/019e6fd7-5e28-7293-ae0d-cd710069c2b8/source.tar.gz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://flakehub.com/f/NixOS/nixpkgs/0.2511.912939"
+      }
+    },
+    "piforge": {
+      "inputs": {
+        "agda-src-2701": "agda-src-2701",
+        "agda-src-280": "agda-src-280",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "stdlib-v211": "stdlib-v211",
+        "stdlib-v23": "stdlib-v23"
+      },
+      "locked": {
+        "lastModified": 1780318689,
+        "narHash": "sha256-ny9Bwqs9Fv/41B2fgHf8QCGjtW4oqUcknmLHy8BkkhQ=",
+        "owner": "avit-io",
+        "repo": "piforge",
+        "rev": "ba5904dd2760a0ee72d2caef4988312752b838ae",
+        "type": "github"
+      },
+      "original": {
+        "owner": "avit-io",
+        "repo": "piforge",
+        "type": "github"
+      }
+    },
+    "prometea": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "piforge": [
+          "piforge"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780320162,
+        "narHash": "sha256-9tc6IWF4Rklt/B0en5UGdJ+fEG+pxSDfJW0+Fo8kEjU=",
+        "owner": "avit-io",
+        "repo": "prometea",
+        "rev": "1281a65ad1e995189736095500aa89537f25f838",
+        "type": "github"
+      },
+      "original": {
+        "owner": "avit-io",
+        "repo": "prometea",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "henql": "henql",
+        "loquel": "loquel",
+        "nixpkgs": "nixpkgs",
+        "piforge": "piforge",
+        "prometea": "prometea"
+      }
+    },
+    "stdlib-v211": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1725330014,
+        "narHash": "sha256-4HfwNAkIhk1yC/oSxZ30xilzUM5/22nzbUSqTjcW5Ng=",
+        "owner": "agda",
+        "repo": "agda-stdlib",
+        "rev": "039e1f4abda49f307f7ed1f5e15232a1c8e9c48c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "agda",
+        "ref": "v2.1.1",
+        "repo": "agda-stdlib",
+        "type": "github"
+      }
+    },
+    "stdlib-v23": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1754140663,
+        "narHash": "sha256-JOeoek6OfyIk9vwTj5QUJU6LnRzwfiG0e0ysW6zbhZ8=",
+        "owner": "agda",
+        "repo": "agda-stdlib",
+        "rev": "8326c7475af1fa456ca04a0203c168d5d7ff842b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "agda",
+        "ref": "v2.3",
+        "repo": "agda-stdlib",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

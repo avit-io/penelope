@@ -1,3 +1,5 @@
+{-# OPTIONS --safe --without-K #-}
+
 module Penelope.Variable where
 
 -- ╔════════════════════════════════════════════════════════════════════╗
