@@ -565,7 +565,7 @@ nel blocco `templating`.
   Penelope verifica che il matcher sia ben formato sul nome, ma non
   garantisce che la metrica abbia effettivamente quella label. Per
   Loquel/Elastic la garanzia c'è (lo schema lo impone); per
-  Loquel/Prometheus no.
+  HenQL/Prometheus no.
 
 ---
 
