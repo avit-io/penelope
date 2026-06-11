@@ -87,6 +87,21 @@ private
   instantField BarGauge = ", \"instant\": true"
   instantField _        = ""
 
+  -- Stessi kind: riduzione esplicita a lastNotNull. Senza, Grafana può
+  -- ripiegare su "mean" sull'intervallo (es. "88.6 executors": media
+  -- temporale, non un valore mai osservato).
+  scalarReduce : String
+  scalarReduce =
+    "{ \"reduceOptions\": { \"calcs\": [ \"lastNotNull\" ]"
+      ++ ", \"fields\": \"\", \"values\": false } }"
+
+  -- Linea (con newline) da inserire nel panel, vuota per gli altri kind.
+  optionsField : PanelKind → String
+  optionsField Stat     = "      \"options\": " ++ scalarReduce ++ "," ++ nl
+  optionsField Gauge    = "      \"options\": " ++ scalarReduce ++ "," ++ nl
+  optionsField BarGauge = "      \"options\": " ++ scalarReduce ++ "," ++ nl
+  optionsField _        = ""
+
   -- Oggetto `datasource` Grafana: `type` sempre, `uid` se presente.
   dsUidField : Maybe String → String
   dsUidField nothing  = ""
@@ -169,6 +184,7 @@ private
     "      \"title\": \"" ++ escapeJSON (Panel.title p) ++ "\","            ++ nl ++
     "      \"datasource\": " ++ dsJson ds ++ ","                            ++ nl ++
     "      \"fieldConfig\": " ++ renderFieldConfig (Panel.config p) ++ ","  ++ nl ++
+    optionsField k ++
     "      \"gridPos\": { \"x\": " ++ showℕ (x pos)
                      ++ ", \"y\": " ++ showℕ (y pos)
                      ++ ", \"w\": " ++ showℕ (w pos)
@@ -213,19 +229,36 @@ private
   labelValuesQuery nothing  l = "label_values(" ++ l ++ ")"
   labelValuesQuery (just m) l = "label_values(" ++ m ++ ", " ++ l ++ ")"
 
+  -- Con includeAll la selezione di default è "All" (`$__all`) e le
+  -- opzioni la includono in testa, come nel JSON che Grafana esporta.
+  allOption : String
+  allOption = "{ \"selected\": true, \"text\": \"All\", \"value\": \"$__all\" }"
+
+  customCurrent : Bool → List⁺ String → String
+  customCurrent true  _    = "{ \"text\": \"All\", \"value\": \"$__all\" }"
+  customCurrent false opts = renderVarOption (head opts)
+
+  customOptions : Bool → List⁺ String → String
+  customOptions false opts = renderVarOptions opts
+  customOptions true  opts =
+    "[" ++ allOption ++ ", " ++ renderVarOption (head opts)
+        ++ renderVarOptionsTail (tail opts)
+        ++ "]"
+
   -- `refresh: 2` = on time range change: senza, Grafana non popola mai
   -- le opzioni di una query variable importata. Niente `allValue`: con
   -- includeAll Grafana interpola l'alternanza di tutti i valori, che
   -- con il matcher `=~` resta fedele.
   renderVariable : Variable → String
   renderVariable v with Variable.spec v
-  ... | customSpec opts =
-        let h = escapeJSON (head opts) in
+  ... | customSpec opts multi inc =
         "{ \"name\": \"" ++ escapeJSON (Variable.name v) ++ "\""   ++
         ", \"type\": \"custom\""                                   ++
         ", \"query\": \"" ++ escapeJSON (varQueryString opts) ++ "\"" ++
-        ", \"current\": { \"text\": \"" ++ h ++ "\", \"value\": \"" ++ h ++ "\" }" ++
-        ", \"options\": " ++ renderVarOptions opts                 ++
+        ", \"multi\": " ++ showBool multi                          ++
+        ", \"includeAll\": " ++ showBool inc                       ++
+        ", \"current\": " ++ customCurrent inc opts                ++
+        ", \"options\": " ++ customOptions inc opts                ++
         " }"
   ... | querySpec src fld multi inc =
         "{ \"name\": \"" ++ escapeJSON (Variable.name v) ++ "\""   ++

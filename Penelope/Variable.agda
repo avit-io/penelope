@@ -7,7 +7,8 @@ module Penelope.Variable where
 -- ║  runtime per parametrizzare le query.                              ║
 -- ║                                                                    ║
 -- ║  Due forme:                                                        ║
--- ║   • customSpec : lista esplicita di valori ("custom").             ║
+-- ║   • customSpec : lista esplicita di valori ("custom") + flag       ║
+-- ║                  multi/includeAll come le query-variable.          ║
 -- ║   • querySpec  : terms-query su un campo + flag multi/includeAll   ║
 -- ║                  ("query"). Porta anche `sourceGrafanaType` (es.    ║
 -- ║                  "elasticsearch") perché Grafana richiede di        ║
@@ -28,7 +29,7 @@ open import Data.String.Properties using () renaming (_≟_ to _≟ˢ_)
 open import Relation.Nullary.Decidable.Core using (does)
 
 data VarSpec : Set where
-  customSpec : List⁺ String → VarSpec
+  customSpec : List⁺ String → (multi includeAll : Bool) → VarSpec
   querySpec  : (sourceGrafanaType fld : String)
              → (multi includeAll : Bool) → VarSpec
   -- Variabile query Prometheus: `label_values(metric, lbl)` (o
@@ -44,9 +45,16 @@ record Variable : Set where
     spec : VarSpec
 
 -- ── Smart constructor compat: la forma "custom" mantiene il vecchio
--- ── signature `mkVariable name options`.
+-- ── signature `mkVariable name options` (single-select, niente All).
 mkVariable : String → List⁺ String → Variable
-mkVariable n opts = record { name = n ; spec = customSpec opts }
+mkVariable n opts = record { name = n ; spec = customSpec opts false false }
+
+-- ── Custom variable con multi/includeAll espliciti: lista statica di
+-- ── valori (es. ambienti dev/qa/cu) selezionabili uno alla volta, in
+-- ── gruppo (multi) o tutti insieme ("All").
+mkCustomVariable : (name : String) → List⁺ String
+                 → (multi includeAll : Bool) → Variable
+mkCustomVariable n opts m a = record { name = n ; spec = customSpec opts m a }
 
 -- ── Query variable: terms su `fld` del datasource `sourceGrafanaType`,
 -- ── più i flag multi/includeAll. È il "VarDecl" backend-agnostico.
@@ -85,7 +93,8 @@ private
   sameMaybeˢ _         _         = false
 
   sameSpec : VarSpec → VarSpec → Bool
-  sameSpec (customSpec _) (customSpec _) = true  -- custom collisione: tollerata
+  sameSpec (customSpec _ m₁ a₁) (customSpec _ m₂ a₂) =
+    (m₁ ==ᵇ m₂) ∧ (a₁ ==ᵇ a₂)   -- opzioni: collisione tollerata; i flag no
   sameSpec (querySpec s₁ f₁ m₁ a₁) (querySpec s₂ f₂ m₂ a₂) =
     does (s₁ ≟ˢ s₂) ∧ does (f₁ ≟ˢ f₂) ∧ (m₁ ==ᵇ m₂) ∧ (a₁ ==ᵇ a₂)
   sameSpec (promQuerySpec m₁ l₁ mu₁ a₁) (promQuerySpec m₂ l₂ mu₂ a₂) =

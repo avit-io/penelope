@@ -80,6 +80,12 @@ withThresholds : ∀ {ds k} → Thresholds → Panel ds k → Panel ds k
 withThresholds th p =
   record p { config = record (Panel.config p) { thresholds = just th } }
 
+-- Registra le variabili di dashboard referenziate dai target del panel
+-- (entrano nella raccolta `collectPanelVars` e quindi nel templating e
+-- nella well-formedness): `withVars (envVar ∷ []) (timeseries …)`.
+withVars : ∀ {ds k} → List Variable → Panel ds k → Panel ds k
+withVars vs p = record p { vars = vs }
+
 -- ─────────────────────────────────────────────────────────────────────
 -- Operatori infissi: ↕ è hcut (top sopra bot), ↔ è vcut (left accanto
 -- a right). Pura ri-denominazione, content-poli e *universe-poli* in C.

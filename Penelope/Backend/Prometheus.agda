@@ -71,9 +71,9 @@ prometheus M = record
 
 -- ── Matcher su variabile di dashboard ───────────────────────────────
 --
--- Sceglie `=` o `=~` in base al flag `multi` della Variable. Su una
--- variabile `customSpec` (raro per Prom) tratta come singolo (`=`):
--- l'interpolazione Grafana di custom-multi non è in scope qui.
+-- Sceglie `=` o `=~` in base al flag `multi` della Variable, uniforme
+-- su query/promQuery/custom: con multi Grafana interpola l'alternanza
+-- regex `v₁|v₂`, che con `=~` resta una disgiunzione di uguaglianze.
 private
   varMatchOp : Variable → MatchOp
   varMatchOp v with Variable.spec v
@@ -81,7 +81,8 @@ private
   ... | querySpec _ _ false _      = meq
   ... | promQuerySpec _ _ true  _  = mregex
   ... | promQuerySpec _ _ false _  = meq
-  ... | customSpec _               = meq
+  ... | customSpec _ true  _       = mregex
+  ... | customSpec _ false _       = meq
 
 infix 4 _=ᵛ_
 _=ᵛ_ : ∀ {M} → (label : String) → (v : Variable) → Matcher M

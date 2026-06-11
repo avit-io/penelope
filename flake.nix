@@ -148,6 +148,11 @@
 
           nativeBuildInputs = [ agda ghc pkgs.gmp pkgs.zlib ];
 
+          # Titoli/JSON possono contenere non-ASCII (·, è, …): senza un
+          # locale UTF-8 il runtime GHC non sa codificarli su stdout e
+          # Agda non riesce a stampare i propri errori (ℕ, ÷, …).
+          LC_ALL = "C.UTF-8";
+
           buildPhase = ''
             runHook preBuild
 
