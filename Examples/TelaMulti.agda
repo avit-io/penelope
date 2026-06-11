@@ -110,6 +110,7 @@ panel-12 e = record
   { title   = "Activity by level"
   ; targets = infoTarget e ∷⁺ errorTarget e ∷ errorNoExpTarget e ∷ []
   ; vars    = []
+  ; config  = noConfig
   }
 
 -- ── Dashboard con un solo panel 24×8 ─────────────────────────────────

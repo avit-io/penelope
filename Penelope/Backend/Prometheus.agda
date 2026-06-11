@@ -36,9 +36,10 @@ open import Penelope.Panel
 open import Penelope.Query
 open import Penelope.Datasource
 open import Penelope.Variable       using (Variable; VarSpec; querySpec;
-                                            customSpec)
+                                            promQuerySpec; customSpec)
 
 open import Data.Bool   using (Bool; true; false)
+open import Data.Maybe  using (nothing)
 open import Data.String using (String; _++_)
 
 -- Il PromType che ogni kind esige.
@@ -63,6 +64,7 @@ prometheus M = record
   { lang        = HenQL
   ; ctx         = M
   ; grafanaType = "prometheus"
+  ; uid         = nothing
   ; render      = λ e → prettyExpr e
   ; faithful?   = λ _ → true
   }
@@ -75,9 +77,11 @@ prometheus M = record
 private
   varMatchOp : Variable → MatchOp
   varMatchOp v with Variable.spec v
-  ... | querySpec _ _ true  _ = mregex
-  ... | querySpec _ _ false _ = meq
-  ... | customSpec _          = meq
+  ... | querySpec _ _ true  _      = mregex
+  ... | querySpec _ _ false _      = meq
+  ... | promQuerySpec _ _ true  _  = mregex
+  ... | promQuerySpec _ _ false _  = meq
+  ... | customSpec _               = meq
 
 infix 4 _=ᵛ_
 _=ᵛ_ : ∀ {M} → (label : String) → (v : Variable) → Matcher M

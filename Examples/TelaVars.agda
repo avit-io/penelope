@@ -95,6 +95,7 @@ mainPanel = record
   { title   = "Activity scoped"
   ; targets = mainTarget ∷⁺ []
   ; vars    = elasticVar levelVar ∷ elasticVar envVar ∷ []
+  ; config  = noConfig
   }
 
 -- ── Una tela 24×8 con un solo panel.

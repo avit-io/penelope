@@ -22,6 +22,7 @@ module Penelope.Variable where
 open import Data.Bool          using (Bool; true; false; _∧_; not)
 open import Data.List          using (List; []; _∷_)
 open import Data.List.NonEmpty using (List⁺)
+open import Data.Maybe         using (Maybe; just; nothing)
 open import Data.String        using (String; _++_)
 open import Data.String.Properties using () renaming (_≟_ to _≟ˢ_)
 open import Relation.Nullary.Decidable.Core using (does)
@@ -30,6 +31,11 @@ data VarSpec : Set where
   customSpec : List⁺ String → VarSpec
   querySpec  : (sourceGrafanaType fld : String)
              → (multi includeAll : Bool) → VarSpec
+  -- Variabile query Prometheus: `label_values(metric, lbl)` (o
+  -- `label_values(lbl)` se il contesto metrica è `nothing`). La forma
+  -- terms di `querySpec` è ES/Loki; Prometheus richiede questa.
+  promQuerySpec : (metric : Maybe String) (lbl : String)
+                → (multi includeAll : Bool) → VarSpec
 
 record Variable : Set where
   constructor mkVariable′
@@ -49,6 +55,13 @@ mkQueryVariable : (name sourceGrafanaType fld : String)
 mkQueryVariable n src f m a =
   record { name = n ; spec = querySpec src f m a }
 
+-- ── Query variable Prometheus: `label_values([metric,] lbl)`. Il
+-- ── `metric` opzionale restringe i valori alle serie esistenti.
+mkPromVariable : (name : String) (metric : Maybe String) (lbl : String)
+                 (multi includeAll : Bool) → Variable
+mkPromVariable n m l mu a =
+  record { name = n ; spec = promQuerySpec m l mu a }
+
 -- ── Riferimento `$name` per sostituzione testuale (PromQL, titoli, …).
 varRef : Variable → String
 varRef v = "$" ++ Variable.name v
@@ -66,10 +79,17 @@ private
   false ==ᵇ false = true
   _     ==ᵇ _     = false
 
+  sameMaybeˢ : Maybe String → Maybe String → Bool
+  sameMaybeˢ nothing   nothing   = true
+  sameMaybeˢ (just a)  (just b)  = does (a ≟ˢ b)
+  sameMaybeˢ _         _         = false
+
   sameSpec : VarSpec → VarSpec → Bool
   sameSpec (customSpec _) (customSpec _) = true  -- custom collisione: tollerata
   sameSpec (querySpec s₁ f₁ m₁ a₁) (querySpec s₂ f₂ m₂ a₂) =
     does (s₁ ≟ˢ s₂) ∧ does (f₁ ≟ˢ f₂) ∧ (m₁ ==ᵇ m₂) ∧ (a₁ ==ᵇ a₂)
+  sameSpec (promQuerySpec m₁ l₁ mu₁ a₁) (promQuerySpec m₂ l₂ mu₂ a₂) =
+    sameMaybeˢ m₁ m₂ ∧ does (l₁ ≟ˢ l₂) ∧ (mu₁ ==ᵇ mu₂) ∧ (a₁ ==ᵇ a₂)
   sameSpec _ _ = false
 
   -- v è compatibile con vs := per ogni w in vs con lo stesso `name`,

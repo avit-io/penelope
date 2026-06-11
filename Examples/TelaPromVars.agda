@@ -78,6 +78,7 @@ panel-47 = record
   { title   = "Health by Source"
   ; targets = mkTarget panel47Expr nothing false tt ∷ []
   ; vars    = envVar ∷ []
+  ; config  = noConfig
   }
   where
     open import Data.Maybe using (nothing)

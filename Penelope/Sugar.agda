@@ -29,6 +29,7 @@ open import Penelope.Dashboard
 open import Level              using (Level)
 open import Data.Bool          using (T)
 open import Data.Unit          using (tt)
+open import Data.Maybe         using (just)
 open import Data.Nat           using (ℕ; zero; suc; _+_)
 open import Data.Product       using (_,_)
 open import Data.List          using (List; _∷_; _++_)
@@ -64,6 +65,20 @@ bargauge t e = mkPanel1 t e
 
 table : ∀ {M} → String → Expr M InstantVector → Panel (prometheus M) Table
 table t e = mkPanel1 t e
+
+-- ─────────────────────────────────────────────────────────────────────
+-- Decorazione fieldConfig: combinatori post-fix su Panel di qualunque
+-- datasource/kind. `withUnit "ms" (timeseries …)`,
+-- `withThresholds (mkThresholds "red" ((1.0 , "green") ∷ [])) (stat …)`.
+-- ─────────────────────────────────────────────────────────────────────
+
+withUnit : ∀ {ds k} → String → Panel ds k → Panel ds k
+withUnit u p =
+  record p { config = record (Panel.config p) { unit = just u } }
+
+withThresholds : ∀ {ds k} → Thresholds → Panel ds k → Panel ds k
+withThresholds th p =
+  record p { config = record (Panel.config p) { thresholds = just th } }
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Operatori infissi: ↕ è hcut (top sopra bot), ↔ è vcut (left accanto

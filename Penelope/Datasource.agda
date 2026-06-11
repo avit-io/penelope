@@ -24,6 +24,7 @@ module Penelope.Datasource where
 open import Penelope.Query
 
 open import Data.Bool   using (Bool)
+open import Data.Maybe  using (Maybe; just; nothing)
 open import Data.String using (String)
 
 record Datasource : Set₂ where
@@ -31,5 +32,14 @@ record Datasource : Set₂ where
     lang        : QueryLang
     ctx         : QueryLang.Ctx lang
     grafanaType : String
+    -- `uid` Grafana del datasource: con `nothing` Grafana aggancia
+    -- all'import il datasource di default per `grafanaType`; con
+    -- `just u` il binding è esplicito (consigliato con più istanze).
+    uid         : Maybe String
     render      : ∀ {τ} → QueryLang.Query lang ctx τ → String
     faithful?   : ∀ {τ} → QueryLang.Query lang ctx τ → Bool
+
+-- Fissa l'uid di un datasource costruito dai backend (che lo lasciano
+-- a `nothing`): `setUid "PBFA97CFB590B2093" (prometheus M)`.
+setUid : String → Datasource → Datasource
+setUid u d = record d { uid = just u }

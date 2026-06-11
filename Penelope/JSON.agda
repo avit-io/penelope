@@ -29,13 +29,14 @@ open import Penelope.Variable
 open import Penelope.Dashboard
 
 open import Data.Bool     using (Bool; true; false)
-open import Data.Char.Base using () renaming (fromℕ to charFromℕ)
+open import Data.Char.Base using (Char) renaming (fromℕ to charFromℕ)
+open import Data.Float.Base using (Float) renaming (show to showFloat)
 open import Data.Maybe    using (Maybe; just; nothing)
 open import Data.Nat      using (ℕ; suc; zero; _+_)
 open import Data.Nat.Show using () renaming (show to showℕ)
-open import Data.String   using (String; _++_; fromList)
+open import Data.String   using (String; _++_; fromList; toList; concat)
 open import Data.Product  using (Σ; _,_; _×_)
-open import Data.List     using (List; []; _∷_)
+open import Data.List     using (List; []; _∷_; map)
                           renaming (_++_ to _++ˡ_)
 open import Data.List.NonEmpty using (List⁺; head; tail)
 open import Data.List.Relation.Unary.All using (All)
@@ -45,6 +46,18 @@ open import Relation.Nullary.Decidable.Core using (does)
 private
   nl : String
   nl = "\n"
+
+  -- Escaping JSON per stringhe arbitrarie: le query PromQL/Loquel
+  -- contengono `"` nei label matcher; titoli e alias sono testo libero.
+  escChar : Char → String
+  escChar '"'  = "\\\""
+  escChar '\\' = "\\\\"
+  escChar '\n' = "\\n"
+  escChar '\t' = "\\t"
+  escChar c    = fromList (c ∷ [])
+
+  escapeJSON : String → String
+  escapeJSON s = concat (map escChar (toList s))
 
   panelTypeOf : PanelKind → String
   panelTypeOf TimeSeries    = "timeseries"
@@ -65,16 +78,69 @@ private
   -- Campo `alias` opzionale: emesso solo se `just`.
   aliasField : Maybe String → String
   aliasField nothing  = ""
-  aliasField (just a) = ", \"alias\": \"" ++ a ++ "\""
+  aliasField (just a) = ", \"alias\": \"" ++ escapeJSON a ++ "\""
+
+  -- I kind a query scalare leggono "l'ultimo valore": query instant.
+  instantField : PanelKind → String
+  instantField Stat     = ", \"instant\": true"
+  instantField Gauge    = ", \"instant\": true"
+  instantField BarGauge = ", \"instant\": true"
+  instantField _        = ""
+
+  -- Oggetto `datasource` Grafana: `type` sempre, `uid` se presente.
+  dsUidField : Maybe String → String
+  dsUidField nothing  = ""
+  dsUidField (just u) = ", \"uid\": \"" ++ escapeJSON u ++ "\""
+
+  dsJson : Datasource → String
+  dsJson ds =
+    "{ \"type\": \"" ++ escapeJSON (Datasource.grafanaType ds) ++ "\""
+      ++ dsUidField (Datasource.uid ds) ++ " }"
+
+  -- ─── fieldConfig.defaults: unit + thresholds opzionali ────────────
+
+  renderSteps : List (Float × String) → String
+  renderSteps []             = ""
+  renderSteps ((v , c) ∷ ss) =
+    ", { \"color\": \"" ++ escapeJSON c
+      ++ "\", \"value\": " ++ showFloat v ++ " }"
+      ++ renderSteps ss
+
+  renderThresholds : Thresholds → String
+  renderThresholds th =
+    "{ \"mode\": \"absolute\", \"steps\": [ { \"color\": \""
+      ++ escapeJSON (Thresholds.baseColor th) ++ "\", \"value\": null }"
+      ++ renderSteps (Thresholds.steps th)
+      ++ " ] }"
+
+  -- Con soglie attive serve anche `color.mode = thresholds`, altrimenti
+  -- timeseries le ignora.
+  defaultsBody : FieldConfig → String
+  defaultsBody (mkFieldConfig nothing nothing)    = ""
+  defaultsBody (mkFieldConfig (just u) nothing)   =
+    "\"unit\": \"" ++ escapeJSON u ++ "\""
+  defaultsBody (mkFieldConfig nothing (just th))  =
+    "\"color\": { \"mode\": \"thresholds\" }, \"thresholds\": "
+      ++ renderThresholds th
+  defaultsBody (mkFieldConfig (just u) (just th)) =
+    "\"unit\": \"" ++ escapeJSON u
+      ++ "\", \"color\": { \"mode\": \"thresholds\" }, \"thresholds\": "
+      ++ renderThresholds th
+
+  renderFieldConfig : FieldConfig → String
+  renderFieldConfig fc =
+    "{ \"defaults\": { " ++ defaultsBody fc ++ " }, \"overrides\": [] }"
 
   -- Render di un singolo target dato il datasource del suo panel.
   renderOneTarget : (ds : Datasource) (k : PanelKind)
                   → ℕ → Target ds k → String
-  renderOneTarget ds _ n t =
+  renderOneTarget ds k n t =
     "{ \"refId\": \"" ++ refIdOf n ++ "\""
-      ++ ", \"expr\": \"" ++ Datasource.render ds (Target.query t) ++ "\""
+      ++ ", \"expr\": \""
+        ++ escapeJSON (Datasource.render ds (Target.query t)) ++ "\""
       ++ aliasField (Target.alias t)
-      ++ ", \"hidden\": " ++ showBool (Target.hidden t)
+      ++ instantField k
+      ++ ", \"hide\": " ++ showBool (Target.hidden t)
       ++ " }"
 
   -- Tail di una `List` di Target con indice corrente.
@@ -100,9 +166,9 @@ private
         p  = AnyPanel.panel ap in
     "    {"                                                                ++ nl ++
     "      \"type\": \"" ++ panelTypeOf k ++ "\","                          ++ nl ++
-    "      \"title\": \"" ++ Panel.title p ++ "\","                         ++ nl ++
-    "      \"datasource\": { \"type\": \""
-       ++ Datasource.grafanaType ds ++ "\" },"                              ++ nl ++
+    "      \"title\": \"" ++ escapeJSON (Panel.title p) ++ "\","            ++ nl ++
+    "      \"datasource\": " ++ dsJson ds ++ ","                            ++ nl ++
+    "      \"fieldConfig\": " ++ renderFieldConfig (Panel.config p) ++ ","  ++ nl ++
     "      \"gridPos\": { \"x\": " ++ showℕ (x pos)
                      ++ ", \"y\": " ++ showℕ (y pos)
                      ++ ", \"w\": " ++ showℕ (w pos)
@@ -121,7 +187,8 @@ private
 
   renderVarOption : String → String
   renderVarOption v =
-    "{ \"text\": \"" ++ v ++ "\", \"value\": \"" ++ v ++ "\" }"
+    "{ \"text\": \"" ++ escapeJSON v
+      ++ "\", \"value\": \"" ++ escapeJSON v ++ "\" }"
 
   renderVarOptionsTail : List String → String
   renderVarOptionsTail []       = ""
@@ -141,24 +208,42 @@ private
       go h []       = h
       go h (v ∷ vs) = h ++ "," ++ go v vs
 
+  -- Query `label_values` per variabili Prometheus.
+  labelValuesQuery : Maybe String → String → String
+  labelValuesQuery nothing  l = "label_values(" ++ l ++ ")"
+  labelValuesQuery (just m) l = "label_values(" ++ m ++ ", " ++ l ++ ")"
+
+  -- `refresh: 2` = on time range change: senza, Grafana non popola mai
+  -- le opzioni di una query variable importata. Niente `allValue`: con
+  -- includeAll Grafana interpola l'alternanza di tutti i valori, che
+  -- con il matcher `=~` resta fedele.
   renderVariable : Variable → String
   renderVariable v with Variable.spec v
   ... | customSpec opts =
-        let h = head opts in
-        "{ \"name\": \"" ++ Variable.name v ++ "\""                ++
+        let h = escapeJSON (head opts) in
+        "{ \"name\": \"" ++ escapeJSON (Variable.name v) ++ "\""   ++
         ", \"type\": \"custom\""                                   ++
-        ", \"query\": \"" ++ varQueryString opts ++ "\""           ++
+        ", \"query\": \"" ++ escapeJSON (varQueryString opts) ++ "\"" ++
         ", \"current\": { \"text\": \"" ++ h ++ "\", \"value\": \"" ++ h ++ "\" }" ++
         ", \"options\": " ++ renderVarOptions opts                 ++
         " }"
   ... | querySpec src fld multi inc =
-        "{ \"name\": \"" ++ Variable.name v ++ "\""                ++
+        "{ \"name\": \"" ++ escapeJSON (Variable.name v) ++ "\""   ++
         ", \"type\": \"query\""                                    ++
-        ", \"datasource\": { \"type\": \"" ++ src ++ "\" }"        ++
-        ", \"query\": { \"find\": \"terms\", \"field\": \"" ++ fld ++ "\" }" ++
+        ", \"datasource\": { \"type\": \"" ++ escapeJSON src ++ "\" }" ++
+        ", \"query\": { \"find\": \"terms\", \"field\": \"" ++ escapeJSON fld ++ "\" }" ++
+        ", \"refresh\": 2"                                         ++
         ", \"multi\": " ++ showBool multi                          ++
         ", \"includeAll\": " ++ showBool inc                       ++
-        ", \"allValue\": \"\""                                     ++
+        " }"
+  ... | promQuerySpec m lbl multi inc =
+        "{ \"name\": \"" ++ escapeJSON (Variable.name v) ++ "\""   ++
+        ", \"type\": \"query\""                                    ++
+        ", \"datasource\": { \"type\": \"prometheus\" }"           ++
+        ", \"query\": \"" ++ escapeJSON (labelValuesQuery m lbl) ++ "\"" ++
+        ", \"refresh\": 2"                                         ++
+        ", \"multi\": " ++ showBool multi                          ++
+        ", \"includeAll\": " ++ showBool inc                       ++
         " }"
 
   joinVars : List Variable → String
@@ -201,9 +286,13 @@ renderDashboard d =
   let panels = walk (Dashboard.tiling d)
       tmpl   = renderTemplating (dashboardVariables d) in
     "{"                                                ++ nl ++
-    "  \"title\": \"" ++ Dashboard.title d ++ "\","     ++ nl ++
-    "  \"uid\": \"" ++ Dashboard.uid d ++ "\","         ++ nl ++
+    "  \"title\": \"" ++ escapeJSON (Dashboard.title d) ++ "\"," ++ nl ++
+    "  \"uid\": \"" ++ escapeJSON (Dashboard.uid d) ++ "\","     ++ nl ++
     "  \"schemaVersion\": 39,"                          ++ nl ++
+    "  \"timezone\": \"browser\","                      ++ nl ++
+    "  \"editable\": true,"                             ++ nl ++
+    "  \"refresh\": \"30s\","                           ++ nl ++
+    "  \"time\": { \"from\": \"now-6h\", \"to\": \"now\" }," ++ nl ++
     "  \"templating\": " ++ tmpl ++ ","                 ++ nl ++
     "  \"panels\": ["                                   ++ nl ++
     panels                                              ++ nl ++

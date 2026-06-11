@@ -60,6 +60,7 @@ record Panel (ds : Datasource) (k : PanelKind) : Set where
     title   : String
     targets : List⁺ (Target ds k)
     vars    : List Variable
+    config  : FieldConfig
 
 -- Convenience: un panel single-target. L'`ok` è implicito perché per i
 -- frammenti vacui (Prometheus) `T true` riduce a `⊤` che ha eta;
@@ -75,6 +76,7 @@ mkPanel1 {ds} {k} t q {ok} = record
   { title   = t
   ; targets = [ mkTarget q nothing false ok ]
   ; vars    = []
+  ; config  = noConfig
   }
 
 -- Esistenziale sul datasource (e sul kind).

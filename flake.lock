@@ -47,11 +47,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1780589836,
-        "narHash": "sha256-9FclUifwOHpiWU76rvnAV51Ta2a04vhXhlfDwOvsrd8=",
+        "lastModified": 1780678381,
+        "narHash": "sha256-dnBbgRyeOGRIvo+GLsKK1Q1Dj0mmB+pQRAPhk76I418=",
         "owner": "avit-io",
         "repo": "henql",
-        "rev": "3fcfcc7e704686995eaeea84b39352e7e6311576",
+        "rev": "bde28efa1f3fe2355843681e1ea957e988b51eb3",
         "type": "github"
       },
       "original": {
@@ -131,11 +131,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1780320162,
-        "narHash": "sha256-9tc6IWF4Rklt/B0en5UGdJ+fEG+pxSDfJW0+Fo8kEjU=",
+        "lastModified": 1780672425,
+        "narHash": "sha256-Hbd8YEKmpWUAIr+bvl9dYbF9Z0/N6l/FaJmqgZiv6VU=",
         "owner": "avit-io",
         "repo": "prometea",
-        "rev": "1281a65ad1e995189736095500aa89537f25f838",
+        "rev": "b749f4122c0821b565de0ed3eb948e374421d4fe",
         "type": "github"
       },
       "original": {

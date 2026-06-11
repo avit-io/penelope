@@ -28,6 +28,7 @@ open import Data.Bool                   using (Bool; true; false; T; _∧_)
 open import Data.Char.Base              using (Char)
 open import Data.List.Base              using (List; []; _∷_; reverse)
 open import Data.List.Membership.Propositional using (_∈_)
+open import Data.Maybe                  using (nothing)
 open import Data.Product.Base           using (_,_)
 open import Data.String                 using (String; _++_; toList)
 
@@ -110,6 +111,7 @@ loki s = record
   { lang        = Loquel
   ; ctx         = lift s
   ; grafanaType = "loki"
+  ; uid         = nothing
   ; render      = renderLoki
   ; faithful?   = faithfulLoki?B
   }
@@ -131,6 +133,7 @@ elastic s = record
   { lang        = Loquel
   ; ctx         = lift s
   ; grafanaType = "elasticsearch"
+  ; uid         = nothing
   ; render      = renderElasticS
   ; faithful?   = faithfulElastic?B
   }

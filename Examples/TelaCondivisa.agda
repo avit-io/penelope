@@ -84,6 +84,7 @@ esPanel = record
   { title   = "Activity (ES) scoped by env"
   ; targets = esTarget ∷ []
   ; vars    = envVar ∷ []
+  ; config  = noConfig
   }
 
 -- ╔════════════════════ Lato Prometheus (HenQL) ══════════════════════╗
@@ -106,6 +107,7 @@ promPanel = record
   { title   = "Health (Prom) by Name, scoped by env"
   ; targets = mkTarget promExpr nothing false tt ∷ []
   ; vars    = envVar ∷ []
+  ; config  = noConfig
   }
 
 -- ╔══════════════════════ Tela 24×16 (ES ↕ Prom) ═════════════════════╗

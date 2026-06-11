@@ -44,27 +44,35 @@
 
       # Requires $_cache, $_stdlib, $_prometea, $_henql to be set
       # (call after henql.lib.mkShell's hooks).
+      # Usa il nix store path come sentinel per invalidare la cache quando
+      # la libreria cambia (es. nuovi flag --without-K, API aggiornate).
       copyLoquel = ''
         _loquel="$_cache/loquel"
-        if [ ! -d "$_loquel" ]; then
-          echo "penelope: copying loquel to $_loquel (one-time setup)..." >&2
+        _loquel_tag="${loquel.packages.${system}.lib}"
+        if [ ! -f "$_loquel/.nix-tag" ] || [ "$(cat "$_loquel/.nix-tag")" != "$_loquel_tag" ]; then
+          echo "penelope: copying loquel to $_loquel..." >&2
+          rm -rf "$_loquel"
           mkdir -p "$_loquel"
           cp -r ${loquel.packages.${system}.lib}/. "$_loquel/"
           chmod -R u+w "$_loquel"
           printf 'name: loquel\ninclude: .\ndepend: standard-library\n' \
             > "$_loquel/loquel.agda-lib"
+          echo "$_loquel_tag" > "$_loquel/.nix-tag"
         fi
       '';
 
       copyPenelope = ''
         _penelope="$_cache/penelope"
-        if [ ! -d "$_penelope" ]; then
-          echo "penelope: copying library to $_penelope (one-time setup)..." >&2
+        _penelope_tag="${penelopeLib}"
+        if [ ! -f "$_penelope/.nix-tag" ] || [ "$(cat "$_penelope/.nix-tag")" != "$_penelope_tag" ]; then
+          echo "penelope: copying library to $_penelope..." >&2
+          rm -rf "$_penelope"
           mkdir -p "$_penelope"
           cp -r ${penelopeLib}/. "$_penelope/"
           chmod -R u+w "$_penelope"
           printf 'name: penelope\ninclude: .\ndepend: standard-library prometea henql loquel\n' \
             > "$_penelope/penelope.agda-lib"
+          echo "$_penelope_tag" > "$_penelope/.nix-tag"
         fi
       '';
 
@@ -107,6 +115,72 @@
               > "$_cache/penelope-env/libraries"
             export AGDA_DIR="$_cache/penelope-env"
           '' + shellHook;
+        };
+
+      # For consumers: compila `<mainModule>.agda` da `src` con l'intero
+      # stack (stdlib, prometea, henql, loquel, penelope) e installa lo
+      # stdout del binario in $out/<name>.json. Contratto: il main
+      # stampa il JSON della dashboard su stdout (run (putStr …)).
+      #
+      # Il wrapper agda-28 di piforge legge $HOME/.cache/piforge/
+      # libraries-2.8.0 e salta la copia della stdlib se
+      # $HOME/.cache/piforge/stdlib-2.3 esiste già: pre-seediamo l'intera
+      # directory con le cinque librerie prima di invocarlo.
+      lib.buildDashboard = { pkgs, src, name, mainModule ? "Main" }:
+        let
+          sys      = pkgs.stdenv.hostPlatform.system;
+          agda     = piforge.packages.${sys}."agda-28";
+          stdlib   = piforge.packages.${sys}."stdlib-28";
+          ghc      = pkgs.haskell.packages.ghc910.ghcWithPackages (ps: with ps; [
+            text bytestring containers unordered-containers hashable
+          ]);
+          seedLib = nm: drv: dep: ''
+            mkdir -p "$_base/${nm}"
+            cp -r ${drv}/. "$_base/${nm}/"
+            chmod -R u+w "$_base/${nm}"
+            printf 'name: ${nm}\ninclude: .\ndepend: ${dep}\n' \
+              > "$_base/${nm}/${nm}.agda-lib"
+          '';
+        in pkgs.stdenv.mkDerivation {
+          pname   = "penelope-dashboard-${name}";
+          version = "0.1";
+          inherit src;
+
+          nativeBuildInputs = [ agda ghc pkgs.gmp pkgs.zlib ];
+
+          buildPhase = ''
+            runHook preBuild
+
+            export HOME=$TMPDIR/home
+            _base="$HOME/.cache/piforge"
+            mkdir -p "$_base/stdlib-2.3"
+            cp -r ${stdlib}/. "$_base/stdlib-2.3/"
+            chmod -R u+w "$_base/stdlib-2.3"
+
+            ${seedLib "prometea" prometea.packages.${sys}.lib "standard-library"}
+            ${seedLib "henql"    henql.packages.${sys}.lib    "standard-library prometea"}
+            ${seedLib "loquel"   loquel.packages.${sys}.lib   "standard-library"}
+            ${seedLib "penelope" penelopeLib                  "standard-library prometea henql loquel"}
+
+            printf '%s\n%s\n%s\n%s\n%s\n' \
+              "$_base/stdlib-2.3/standard-library.agda-lib" \
+              "$_base/prometea/prometea.agda-lib" \
+              "$_base/henql/henql.agda-lib" \
+              "$_base/loquel/loquel.agda-lib" \
+              "$_base/penelope/penelope.agda-lib" \
+              > "$_base/libraries-2.8.0"
+
+            agda --compile ${mainModule}.agda
+
+            runHook postBuild
+          '';
+
+          installPhase = ''
+            runHook preInstall
+            mkdir -p "$out"
+            ./${mainModule} > "$out/${name}.json"
+            runHook postInstall
+          '';
         };
     };
 }
