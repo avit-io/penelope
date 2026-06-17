@@ -47,11 +47,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1780678381,
-        "narHash": "sha256-dnBbgRyeOGRIvo+GLsKK1Q1Dj0mmB+pQRAPhk76I418=",
+        "lastModified": 1781709269,
+        "narHash": "sha256-cuzFsXv/chhiw8MUhKAiHh2VPZYt22hhBWo5GUVIBqw=",
         "owner": "avit-io",
         "repo": "henql",
-        "rev": "bde28efa1f3fe2355843681e1ea957e988b51eb3",
+        "rev": "a23a8e7e4d27faa2e65186a33bf8176ef3d2b43e",
         "type": "github"
       },
       "original": {
