@@ -31,7 +31,7 @@ open import Penelope.Dashboard
 open import Data.Bool     using (Bool; true; false)
 open import Data.Char.Base using (Char) renaming (fromℕ to charFromℕ)
 open import Data.Float.Base using (Float) renaming (show to showFloat)
-open import Data.Maybe    using (Maybe; just; nothing)
+open import Data.Maybe    using (Maybe; just; nothing; maybe)
 open import Data.Nat      using (ℕ; suc; zero; _+_)
 open import Data.Nat.Show using () renaming (show to showℕ)
 open import Data.String   using (String; _++_; fromList; toList; concat)
@@ -80,27 +80,79 @@ private
   aliasField nothing  = ""
   aliasField (just a) = ", \"alias\": \"" ++ escapeJSON a ++ "\""
 
-  -- I kind a query scalare leggono "l'ultimo valore": query instant.
-  instantField : PanelKind → String
-  instantField Stat     = ", \"instant\": true"
-  instantField Gauge    = ", \"instant\": true"
-  instantField BarGauge = ", \"instant\": true"
-  instantField _        = ""
+  -- L'instant è DERIVATO dal viz (instantViz): niente più chiavi da
+  -- indovinare per-kind.
+  instantField : Bool → String
+  instantField true  = ", \"instant\": true"
+  instantField false = ", \"instant\": false"
 
-  -- Stessi kind: riduzione esplicita a lastNotNull. Senza, Grafana può
-  -- ripiegare su "mean" sull'intervallo (es. "88.6 executors": media
-  -- temporale, non un valore mai osservato).
-  scalarReduce : String
-  scalarReduce =
-    "{ \"reduceOptions\": { \"calcs\": [ \"lastNotNull\" ]"
-      ++ ", \"fields\": \"\", \"values\": false } }"
+  -- reduceOptions: leggi "l'ultimo valore non nullo". Senza, Grafana
+  -- ripiega su "mean" sull'intervallo (numeri mai osservati).
+  reduceInner : String
+  reduceInner =
+    "\"reduceOptions\": { \"calcs\": [ \"lastNotNull\" ]"
+      ++ ", \"fields\": \"\", \"values\": false }"
 
-  -- Linea (con newline) da inserire nel panel, vuota per gli altri kind.
-  optionsField : PanelKind → String
-  optionsField Stat     = "      \"options\": " ++ scalarReduce ++ "," ++ nl
-  optionsField Gauge    = "      \"options\": " ++ scalarReduce ++ "," ++ nl
-  optionsField BarGauge = "      \"options\": " ++ scalarReduce ++ "," ++ nl
-  optionsField _        = ""
+  -- ─── viz → stringhe Grafana (totali sugli enum chiusi) ────────────
+  colorModeName : ColorMode → String
+  colorModeName cmNone       = "none"
+  colorModeName cmValue      = "value"
+  colorModeName cmBackground = "background"
+
+  graphModeName : GraphMode → String
+  graphModeName gmNone = "none"
+  graphModeName gmArea = "area"
+
+  textModeName : TextMode → String
+  textModeName tmAuto  = "auto"
+  textModeName tmValue = "value"
+  textModeName tmName  = "name"
+  textModeName tmNone  = "none"
+
+  gradientName : GradientMode → String
+  gradientName grNone    = "none"
+  gradientName grOpacity = "opacity"
+  gradientName grHue     = "hue"
+  gradientName grScheme  = "scheme"
+
+  barDisplayName : BarDisplay → String
+  barDisplayName bdBasic    = "basic"
+  barDisplayName bdGradient = "gradient"
+  barDisplayName bdLcd      = "lcd"
+
+  -- `options` del pannello, per-kind, derivato dal Viz. Linea con
+  -- newline da inserire nel panel; vuota per i kind senza options.
+  optionsField : (k : PanelKind) → Viz k → String
+  optionsField TimeSeries    _ = ""
+  optionsField Table         _ = ""
+  optionsField StatusHistory _ = ""
+  optionsField Stat v =
+    "      \"options\": { " ++ reduceInner
+      ++ ", \"colorMode\": \"" ++ colorModeName (StatViz.colorMode v) ++ "\""
+      ++ ", \"graphMode\": \"" ++ graphModeName (StatViz.graphMode v) ++ "\""
+      ++ ", \"textMode\": \""  ++ textModeName  (StatViz.textMode  v) ++ "\""
+      ++ ", \"justifyMode\": \"auto\" }," ++ nl
+  optionsField Gauge v =
+    "      \"options\": { " ++ reduceInner
+      ++ ", \"showThresholdMarkers\": " ++ showBool (GaugeViz.showThresholdMarkers v)
+      ++ " }," ++ nl
+  optionsField BarGauge v =
+    "      \"options\": { " ++ reduceInner
+      ++ ", \"displayMode\": \"" ++ barDisplayName (BarGaugeViz.display v) ++ "\""
+      ++ ", \"showUnfilled\": true }," ++ nl
+
+  -- fieldConfig.defaults.custom: solo TimeSeries ha custom field config.
+  customDefaults : (k : PanelKind) → Viz k → String
+  customDefaults TimeSeries v =
+    "\"custom\": { \"drawStyle\": \"line\", \"showPoints\": \"never\""
+      ++ ", \"lineWidth\": "      ++ showℕ (TimeSeriesViz.lineWidth   v)
+      ++ ", \"fillOpacity\": "    ++ showℕ (TimeSeriesViz.fillOpacity v)
+      ++ ", \"gradientMode\": \"" ++ gradientName (TimeSeriesViz.gradientMode v) ++ "\" }"
+  customDefaults Stat          _ = ""
+  customDefaults Gauge         _ = ""
+  customDefaults BarGauge      _ = ""
+  customDefaults Table         _ = ""
+  customDefaults StatusHistory _ = ""
 
   -- Oggetto `datasource` Grafana: `type` sempre, `uid` se presente.
   dsUidField : Maybe String → String
@@ -112,7 +164,7 @@ private
     "{ \"type\": \"" ++ escapeJSON (Datasource.grafanaType ds) ++ "\""
       ++ dsUidField (Datasource.uid ds) ++ " }"
 
-  -- ─── fieldConfig.defaults: unit + thresholds opzionali ────────────
+  -- ─── fieldConfig.defaults ─────────────────────────────────────────
 
   renderSteps : List (Float × String) → String
   renderSteps []             = ""
@@ -128,68 +180,84 @@ private
       ++ renderSteps (Thresholds.steps th)
       ++ " ] }"
 
+  -- Pezzi opzionali dei defaults: unit, (color+thresholds), custom.
+  -- Si concatenano solo quelli presenti, separati da virgola.
+  nonempties : List String → List String
+  nonempties []       = []
+  nonempties (s ∷ ss) with does (s ≟ˢ "")
+  ... | true  = nonempties ss
+  ... | false = s ∷ nonempties ss
+
+  joinComma : List String → String
+  joinComma []           = ""
+  joinComma (s ∷ [])     = s
+  joinComma (s ∷ t ∷ ts) = s ++ ", " ++ joinComma (t ∷ ts)
+
+  unitPiece : FieldConfig → String
+  unitPiece fc =
+    maybe (λ u → "\"unit\": \"" ++ escapeJSON u ++ "\"") "" (FieldConfig.unit fc)
+
   -- Con soglie attive serve anche `color.mode = thresholds`, altrimenti
-  -- timeseries le ignora.
-  defaultsBody : FieldConfig → String
-  defaultsBody (mkFieldConfig nothing nothing)    = ""
-  defaultsBody (mkFieldConfig (just u) nothing)   =
-    "\"unit\": \"" ++ escapeJSON u ++ "\""
-  defaultsBody (mkFieldConfig nothing (just th))  =
-    "\"color\": { \"mode\": \"thresholds\" }, \"thresholds\": "
-      ++ renderThresholds th
-  defaultsBody (mkFieldConfig (just u) (just th)) =
-    "\"unit\": \"" ++ escapeJSON u
-      ++ "\", \"color\": { \"mode\": \"thresholds\" }, \"thresholds\": "
-      ++ renderThresholds th
+  -- timeseries (e lo sfondo delle stat) le ignorano.
+  thrPiece : FieldConfig → String
+  thrPiece fc =
+    maybe (λ th → "\"color\": { \"mode\": \"thresholds\" }, \"thresholds\": "
+                    ++ renderThresholds th)
+          "" (FieldConfig.thresholds fc)
 
-  renderFieldConfig : FieldConfig → String
-  renderFieldConfig fc =
-    "{ \"defaults\": { " ++ defaultsBody fc ++ " }, \"overrides\": [] }"
+  renderFieldConfig : (k : PanelKind) → Viz k → FieldConfig → String
+  renderFieldConfig k v fc =
+    "{ \"defaults\": { "
+      ++ joinComma (nonempties (unitPiece fc ∷ thrPiece fc ∷ customDefaults k v ∷ []))
+      ++ " }, \"overrides\": [] }"
 
-  -- Render di un singolo target dato il datasource del suo panel.
+  -- Render di un singolo target; `instS` (la stringa instant) è comune a
+  -- tutti i target del panel, calcolata una volta dal viz.
   renderOneTarget : (ds : Datasource) (k : PanelKind)
-                  → ℕ → Target ds k → String
-  renderOneTarget ds k n t =
+                  → String → ℕ → Target ds k → String
+  renderOneTarget ds k instS n t =
     "{ \"refId\": \"" ++ refIdOf n ++ "\""
       ++ ", \"expr\": \""
         ++ escapeJSON (Datasource.render ds (Target.query t)) ++ "\""
       ++ aliasField (Target.alias t)
-      ++ instantField k
+      ++ instS
       ++ ", \"hide\": " ++ showBool (Target.hidden t)
       ++ " }"
 
   -- Tail di una `List` di Target con indice corrente.
   renderTargetsTail : (ds : Datasource) (k : PanelKind)
-                    → ℕ → List (Target ds k) → String
-  renderTargetsTail _  _ _ []       = ""
-  renderTargetsTail ds k n (t ∷ ts) =
-    ", " ++ renderOneTarget ds k n t
-         ++ renderTargetsTail ds k (suc n) ts
+                    → String → ℕ → List (Target ds k) → String
+  renderTargetsTail _  _ _     _ []       = ""
+  renderTargetsTail ds k instS n (t ∷ ts) =
+    ", " ++ renderOneTarget ds k instS n t
+         ++ renderTargetsTail ds k instS (suc n) ts
 
   -- Array `targets` per un panel: lista non vuota, refId derivato.
   renderTargets : (ds : Datasource) (k : PanelKind)
-                → List⁺ (Target ds k) → String
-  renderTargets ds k ts =
-    "[" ++ renderOneTarget    ds k 0 (head ts)
-        ++ renderTargetsTail  ds k 1 (tail ts)
+                → String → List⁺ (Target ds k) → String
+  renderTargets ds k instS ts =
+    "[" ++ renderOneTarget    ds k instS 0 (head ts)
+        ++ renderTargetsTail  ds k instS 1 (tail ts)
         ++ "]"
 
   renderPanel : Rect → AnyPanel → String
   renderPanel pos ap =
-    let ds = AnyPanel.ds ap
-        k  = AnyPanel.kind ap
-        p  = AnyPanel.panel ap in
+    let ds    = AnyPanel.ds ap
+        k     = AnyPanel.kind ap
+        p     = AnyPanel.panel ap
+        vz    = Panel.viz p
+        instS = instantField (instantViz k vz) in
     "    {"                                                                ++ nl ++
     "      \"type\": \"" ++ panelTypeOf k ++ "\","                          ++ nl ++
     "      \"title\": \"" ++ escapeJSON (Panel.title p) ++ "\","            ++ nl ++
     "      \"datasource\": " ++ dsJson ds ++ ","                            ++ nl ++
-    "      \"fieldConfig\": " ++ renderFieldConfig (Panel.config p) ++ ","  ++ nl ++
-    optionsField k ++
+    "      \"fieldConfig\": " ++ renderFieldConfig k vz (Panel.config p) ++ "," ++ nl ++
+    optionsField k vz ++
     "      \"gridPos\": { \"x\": " ++ showℕ (x pos)
                      ++ ", \"y\": " ++ showℕ (y pos)
                      ++ ", \"w\": " ++ showℕ (w pos)
                      ++ ", \"h\": " ++ showℕ (h pos) ++ " },"               ++ nl ++
-    "      \"targets\": " ++ renderTargets ds k (Panel.targets p)           ++ nl ++
+    "      \"targets\": " ++ renderTargets ds k instS (Panel.targets p)     ++ nl ++
     "    }"
 
   -- Walk del Tiling content-polimorfo, istanziato a C := AnyPanel.

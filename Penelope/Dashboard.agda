@@ -61,6 +61,9 @@ record Panel (ds : Datasource) (k : PanelKind) : Set where
     targets : List⁺ (Target ds k)
     vars    : List Variable
     config  : FieldConfig
+    -- Opzioni di visualizzazione del kind: `Viz k` (dipendente da k) →
+    -- una Stat porta StatViz, una TimeSeries TimeSeriesViz, ecc.
+    viz     : Viz k
 
 -- Convenience: un panel single-target. L'`ok` è implicito perché per i
 -- frammenti vacui (Prometheus) `T true` riduce a `⊤` che ha eta;
@@ -77,6 +80,7 @@ mkPanel1 {ds} {k} t q {ok} = record
   ; targets = [ mkTarget q nothing false ok ]
   ; vars    = []
   ; config  = noConfig
+  ; viz     = defaultViz k
   }
 
 -- Esistenziale sul datasource (e sul kind).

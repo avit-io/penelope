@@ -27,7 +27,7 @@ open import Penelope.Variable  public
 open import Penelope.Dashboard
 
 open import Level              using (Level)
-open import Data.Bool          using (T)
+open import Data.Bool          using (T; Bool)
 open import Data.Unit          using (tt)
 open import Data.Maybe         using (just)
 open import Data.Nat           using (ℕ; zero; suc; _+_)
@@ -85,6 +85,42 @@ withThresholds th p =
 -- nella well-formedness): `withVars (envVar ∷ []) (timeseries …)`.
 withVars : ∀ {ds k} → List Variable → Panel ds k → Panel ds k
 withVars vs p = record p { vars = vs }
+
+-- ─────────────────────────────────────────────────────────────────────
+-- Decoratori di visualizzazione SPECIFICI PER KIND. Operano su `Viz k`:
+-- `withFill` su una Stat o `withGraphMode` su una TimeSeries sono errori
+-- di tipo, non sviste da scoprire a runtime su Grafana.
+-- ─────────────────────────────────────────────────────────────────────
+
+withColorMode : ∀ {ds} → ColorMode → Panel ds Stat → Panel ds Stat
+withColorMode c p = record p { viz = record (Panel.viz p) { colorMode = c } }
+
+withGraphMode : ∀ {ds} → GraphMode → Panel ds Stat → Panel ds Stat
+withGraphMode g p = record p { viz = record (Panel.viz p) { graphMode = g } }
+
+withTextMode : ∀ {ds} → TextMode → Panel ds Stat → Panel ds Stat
+withTextMode m p = record p { viz = record (Panel.viz p) { textMode = m } }
+
+-- Preset «stat viva»: sparkline (gmArea, da cui instant=false) + sfondo
+-- colorato dalle soglie. Il numero grosso resta l'ultimo valore.
+sparkStat : ∀ {ds} → Panel ds Stat → Panel ds Stat
+sparkStat p = withColorMode cmBackground (withGraphMode gmArea p)
+
+-- Badge: blocco colorato dalle soglie, senza testo né grafico — lo stato
+-- (verde/giallo/rosso) di una riga, a colpo d'occhio.
+badge : ∀ {ds} → Panel ds Stat → Panel ds Stat
+badge p = withTextMode tmNone (withColorMode cmBackground p)
+
+withFill : ∀ {ds} → ℕ → GradientMode → Panel ds TimeSeries → Panel ds TimeSeries
+withFill o g p =
+  record p { viz = record (Panel.viz p) { fillOpacity = o ; gradientMode = g } }
+
+withLineWidth : ∀ {ds} → ℕ → Panel ds TimeSeries → Panel ds TimeSeries
+withLineWidth w p = record p { viz = record (Panel.viz p) { lineWidth = w } }
+
+withThresholdMarkers : ∀ {ds} → Bool → Panel ds Gauge → Panel ds Gauge
+withThresholdMarkers b p =
+  record p { viz = record (Panel.viz p) { showThresholdMarkers = b } }
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Operatori infissi: ↕ è hcut (top sopra bot), ↔ è vcut (left accanto
