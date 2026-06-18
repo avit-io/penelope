@@ -17,11 +17,18 @@ module Penelope.Semeion where
 
 open import Penelope.Panel
   using (PanelKind; TimeSeries; Stat; Gauge; BarGauge; Table; StatusHistory)
+open import Penelope.Datasource using (Datasource)
+open import Penelope.Dashboard  using (Panel; Target; mkPanelT)
 open import Semeion.Signal
   using ( Display; arc; bars; number; line; stateBands; grid
-        ; Faithful; forced; underdetermined )
+        ; Faithful; forced; underdetermined
+        ; Signal; mkSignal; ratio; flow; point; comparable; Ratio
+        ; Intent; now; displayAt )
 
-open import Data.Maybe using (Maybe; just; nothing)
+open import Data.List.NonEmpty using (List⁺)
+open import Data.Maybe         using (Maybe; just; nothing)
+open import Data.String        using (String)
+open import Data.Empty         using (⊥)
 open import Relation.Binary.PropositionalEquality using (_≡_; refl)
 
 -- ── L'adapter: ogni primitiva geometrica È un panel kind ───────────────
@@ -65,3 +72,50 @@ panelKind-round Gauge         = refl
 panelKind-round BarGauge      = refl
 panelKind-round Table         = refl
 panelKind-round StatusHistory = refl
+
+-- ╔══════════════════════════════════════════════════════════════════════╗
+-- ║  PORTA 1 — il kind FORZATO dal segnale (non più un implicito libero). ║
+-- ║                                                                        ║
+-- ║  Oggi `Panel ds k` ha `k` libero: puoi scrivere `Panel ds Gauge` su   ║
+-- ║  un `flow`. L'adapter lo SMENTISCE, ma non lo IMPEDISCE. Qui il kind   ║
+-- ║  diventa funzione del segnale: l'unico modo di ottenere il pannello è  ║
+-- ║  esibire la derivazione `displayAt i s ≡ forced d`.                   ║
+-- ║                                                                        ║
+-- ║  Limite (onesto): questo lega kind ↔ Signal, NON Signal ↔ query. Il   ║
+-- ║  `Signal` resta asserito a fianco dei Target — chiuderlo è «porta 2»  ║
+-- ║  (costruttori-query geometrici), non derivabile dalla sintassi.       ║
+-- ╚══════════════════════════════════════════════════════════════════════╝
+
+-- Il tipo del costruttore, CALCOLATO dal segnale: forced ⇒ builder del kind
+-- emerso; underdetermined ⇒ ⊥ (non costruibile, per costruzione).
+PanelFor : Datasource → Intent → Signal → Set
+PanelFor ds i s with displayAt i s
+... | forced d          = List⁺ (Target ds (panelKind d)) → Panel ds (panelKind d)
+... | underdetermined _ = ⊥
+
+-- Il costruttore forzato: il kind non si passa, si deriva. La prova
+-- `displayAt i s ≡ forced d` è il cancello — senza, niente pannello. Un
+-- segnale underdetermined non ammette `d` con `forced d`: non typecheck.
+panelOf : ∀ {ds} (i : Intent) (s : Signal) {d : Display}
+        → displayAt i s ≡ forced d
+        → String → List⁺ (Target ds (panelKind d)) → Panel ds (panelKind d)
+panelOf i s _ title ts = mkPanelT title ts
+
+-- Il fiat CONFINATO e VISIBILE: quando scegli un kind senza che emerga
+-- (segnale sottodeterminato, o fuori-geometria), lo dici col nome. Nessun
+-- teorema dietro — è regime 3, e si vede. `mkPanelT`/`mkPanel1` col `{k}`
+-- libero restano l'API grezza, da relegare a questo caso.
+panelStipulated : ∀ {ds} (k : PanelKind) → String → List⁺ (Target ds k) → Panel ds k
+panelStipulated k title ts = mkPanelT title ts
+
+-- ── La legge nei tipi ──────────────────────────────────────────────────
+-- SLI adesso: PanelFor È il builder di Gauge — il widget emerge.
+sliPanelEmerges : ∀ {ds} (r : Ratio)
+  → PanelFor ds now (mkSignal (ratio r) point)
+  ≡ (List⁺ (Target ds Gauge) → Panel ds Gauge)
+sliPanelEmerges _ = refl
+
+-- flow/comparable adesso (sottodeterminato): PanelFor È ⊥ — non costruibile.
+flowFamilyNoPanel : ∀ {ds}
+  → PanelFor ds now (mkSignal flow comparable) ≡ ⊥
+flowFamilyNoPanel = refl
