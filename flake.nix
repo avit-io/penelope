@@ -23,9 +23,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.piforge.follows = "piforge";
     };
+    semeion = {
+      url   = "github:avit-io/semeion";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.piforge.follows = "piforge";
+    };
   };
 
-  outputs = { self, nixpkgs, piforge, prometea, henql, loquel }:
+  outputs = { self, nixpkgs, piforge, prometea, henql, loquel, semeion }:
     let
       system = "x86_64-linux";
       pkgs   = nixpkgs.legacyPackages.${system};
@@ -37,7 +42,7 @@
         installPhase = ''
           mkdir -p $out
           cp -r Penelope $out/
-          printf 'name: penelope\ninclude: .\ndepend: standard-library prometea henql loquel\n' \
+          printf 'name: penelope\ninclude: .\ndepend: standard-library prometea henql loquel semeion\n' \
             > $out/penelope.agda-lib
         '';
       };
@@ -61,6 +66,22 @@
         fi
       '';
 
+      # semeion è una radice (solo stdlib): la geometria del segnale a monte.
+      copySemeion = ''
+        _semeion="$_cache/semeion"
+        _semeion_tag="${semeion.packages.${system}.lib}"
+        if [ ! -f "$_semeion/.nix-tag" ] || [ "$(cat "$_semeion/.nix-tag")" != "$_semeion_tag" ]; then
+          echo "penelope: copying semeion to $_semeion..." >&2
+          rm -rf "$_semeion"
+          mkdir -p "$_semeion"
+          cp -r ${semeion.packages.${system}.lib}/. "$_semeion/"
+          chmod -R u+w "$_semeion"
+          printf 'name: semeion\ninclude: .\ndepend: standard-library\n' \
+            > "$_semeion/semeion.agda-lib"
+          echo "$_semeion_tag" > "$_semeion/.nix-tag"
+        fi
+      '';
+
       copyPenelope = ''
         _penelope="$_cache/penelope"
         _penelope_tag="${penelopeLib}"
@@ -70,7 +91,7 @@
           mkdir -p "$_penelope"
           cp -r ${penelopeLib}/. "$_penelope/"
           chmod -R u+w "$_penelope"
-          printf 'name: penelope\ninclude: .\ndepend: standard-library prometea henql loquel\n' \
+          printf 'name: penelope\ninclude: .\ndepend: standard-library prometea henql loquel semeion\n' \
             > "$_penelope/penelope.agda-lib"
           echo "$_penelope_tag" > "$_penelope/.nix-tag"
         fi
@@ -88,13 +109,14 @@
       devShells.${system}.default = henql.lib.mkShell {
         inherit pkgs;
         extraPackages = with pkgs; [ watchexec ];
-        shellHook = copyLoquel + ''
+        shellHook = copyLoquel + copySemeion + ''
           mkdir -p "$_cache/penelope-dev"
-          printf '%s\n%s\n%s\n%s\n' \
+          printf '%s\n%s\n%s\n%s\n%s\n' \
             "$_stdlib/standard-library.agda-lib" \
             "$_prometea/prometea.agda-lib" \
             "$_henql/henql.agda-lib" \
             "$_loquel/loquel.agda-lib" \
+            "$_semeion/semeion.agda-lib" \
             > "$_cache/penelope-dev/libraries"
           export AGDA_DIR="$_cache/penelope-dev"
         '';
@@ -104,13 +126,14 @@
       lib.mkShell = { pkgs, extraPackages ? [], shellHook ? "" }:
         henql.lib.mkShell {
           inherit pkgs extraPackages;
-          shellHook = copyLoquel + copyPenelope + ''
+          shellHook = copyLoquel + copySemeion + copyPenelope + ''
             mkdir -p "$_cache/penelope-env"
-            printf '%s\n%s\n%s\n%s\n%s\n' \
+            printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
               "$_stdlib/standard-library.agda-lib" \
               "$_prometea/prometea.agda-lib" \
               "$_henql/henql.agda-lib" \
               "$_loquel/loquel.agda-lib" \
+              "$_semeion/semeion.agda-lib" \
               "$_penelope/penelope.agda-lib" \
               > "$_cache/penelope-env/libraries"
             export AGDA_DIR="$_cache/penelope-env"
@@ -165,13 +188,15 @@
             ${seedLib "prometea" prometea.packages.${sys}.lib "standard-library"}
             ${seedLib "henql"    henql.packages.${sys}.lib    "standard-library prometea"}
             ${seedLib "loquel"   loquel.packages.${sys}.lib   "standard-library"}
-            ${seedLib "penelope" penelopeLib                  "standard-library prometea henql loquel"}
+            ${seedLib "semeion"  semeion.packages.${sys}.lib  "standard-library"}
+            ${seedLib "penelope" penelopeLib                  "standard-library prometea henql loquel semeion"}
 
-            printf '%s\n%s\n%s\n%s\n%s\n' \
+            printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
               "$_base/stdlib-2.3/standard-library.agda-lib" \
               "$_base/prometea/prometea.agda-lib" \
               "$_base/henql/henql.agda-lib" \
               "$_base/loquel/loquel.agda-lib" \
+              "$_base/semeion/semeion.agda-lib" \
               "$_base/penelope/penelope.agda-lib" \
               > "$_base/libraries-2.8.0"
 
