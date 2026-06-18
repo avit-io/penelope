@@ -36,7 +36,8 @@ open import Penelope.Panel
 open import Penelope.Query
 open import Penelope.Datasource
 open import Penelope.Variable       using (Variable; VarSpec; querySpec;
-                                            promQuerySpec; customSpec)
+                                            promQuerySpec; customSpec;
+                                            datasourceSpec)
 
 open import Data.Bool   using (Bool; true; false)
 open import Data.Maybe  using (nothing)
@@ -79,10 +80,11 @@ private
   varMatchOp v with Variable.spec v
   ... | querySpec _ _ true  _      = mregex
   ... | querySpec _ _ false _      = meq
-  ... | promQuerySpec _ _ true  _  = mregex
-  ... | promQuerySpec _ _ false _  = meq
+  ... | promQuerySpec _ _ true  _ _ = mregex
+  ... | promQuerySpec _ _ false _ _ = meq
   ... | customSpec _ true  _       = mregex
   ... | customSpec _ false _       = meq
+  ... | datasourceSpec _           = meq
 
 infix 4 _=ᵛ_
 _=ᵛ_ : ∀ {M} → (label : String) → (v : Variable) → Matcher M

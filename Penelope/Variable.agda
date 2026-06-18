@@ -28,6 +28,14 @@ open import Data.String        using (String; _++_)
 open import Data.String.Properties using () renaming (_≟_ to _≟ˢ_)
 open import Relation.Nullary.Decidable.Core using (does)
 
+-- Su quale datasource gira una query variable: due casi, espliciti.
+--   • dsDefault  → il datasource Prometheus di default di Grafana;
+--   • dsVar n    → segue la variabile-datasource di nome `n` (il picker).
+-- Niente `Maybe String`: l'assenza di scelta È un caso con un nome.
+data DSRef : Set where
+  dsDefault : DSRef
+  dsVar     : (varName : String) → DSRef
+
 data VarSpec : Set where
   customSpec : List⁺ String → (multi includeAll : Bool) → VarSpec
   querySpec  : (sourceGrafanaType fld : String)
@@ -35,8 +43,13 @@ data VarSpec : Set where
   -- Variabile query Prometheus: `label_values(metric, lbl)` (o
   -- `label_values(lbl)` se il contesto metrica è `nothing`). La forma
   -- terms di `querySpec` è ES/Loki; Prometheus richiede questa.
+  -- `ds` dice su quale datasource valutarla (default, o segui il picker).
   promQuerySpec : (metric : Maybe String) (lbl : String)
-                → (multi includeAll : Bool) → VarSpec
+                → (multi includeAll : Bool) (ds : DSRef) → VarSpec
+  -- Variabile di tipo "datasource": Grafana mostra un PICKER dei
+  -- datasource del plugin indicato (es. "prometheus"). Il suo valore è
+  -- l'uid del datasource scelto, referenziabile come `${name}`.
+  datasourceSpec : (pluginId : String) → VarSpec
 
 record Variable : Set where
   constructor mkVariable′
@@ -68,7 +81,20 @@ mkQueryVariable n src f m a =
 mkPromVariable : (name : String) (metric : Maybe String) (lbl : String)
                  (multi includeAll : Bool) → Variable
 mkPromVariable n m l mu a =
-  record { name = n ; spec = promQuerySpec m l mu a }
+  record { name = n ; spec = promQuerySpec m l mu a dsDefault }
+
+-- ── Come mkPromVariable, ma valutata sul datasource scelto via picker:
+-- ── `dsVarName` è il NOME della variabile-datasource da seguire. Così il
+-- ── picker pilota anche le variabili, non solo i pannelli.
+mkPromVariableOn : (name dsVarName : String) (metric : Maybe String)
+                   (lbl : String) (multi includeAll : Bool) → Variable
+mkPromVariableOn n dv m l mu a =
+  record { name = n ; spec = promQuerySpec m l mu a (dsVar dv) }
+
+-- ── Variabile datasource: Grafana mostra un picker dei datasource del
+-- ── plugin `pluginId` (es. "prometheus"); il valore è l'uid scelto.
+mkDatasourceVariable : (name pluginId : String) → Variable
+mkDatasourceVariable n p = record { name = n ; spec = datasourceSpec p }
 
 -- ── Riferimento `$name` per sostituzione testuale (PromQL, titoli, …).
 varRef : Variable → String
@@ -92,13 +118,20 @@ private
   sameMaybeˢ (just a)  (just b)  = does (a ≟ˢ b)
   sameMaybeˢ _         _         = false
 
+  sameDSRef : DSRef → DSRef → Bool
+  sameDSRef dsDefault   dsDefault   = true
+  sameDSRef (dsVar a)   (dsVar b)   = does (a ≟ˢ b)
+  sameDSRef _           _           = false
+
   sameSpec : VarSpec → VarSpec → Bool
   sameSpec (customSpec _ m₁ a₁) (customSpec _ m₂ a₂) =
     (m₁ ==ᵇ m₂) ∧ (a₁ ==ᵇ a₂)   -- opzioni: collisione tollerata; i flag no
   sameSpec (querySpec s₁ f₁ m₁ a₁) (querySpec s₂ f₂ m₂ a₂) =
     does (s₁ ≟ˢ s₂) ∧ does (f₁ ≟ˢ f₂) ∧ (m₁ ==ᵇ m₂) ∧ (a₁ ==ᵇ a₂)
-  sameSpec (promQuerySpec m₁ l₁ mu₁ a₁) (promQuerySpec m₂ l₂ mu₂ a₂) =
+  sameSpec (promQuerySpec m₁ l₁ mu₁ a₁ d₁) (promQuerySpec m₂ l₂ mu₂ a₂ d₂) =
     sameMaybeˢ m₁ m₂ ∧ does (l₁ ≟ˢ l₂) ∧ (mu₁ ==ᵇ mu₂) ∧ (a₁ ==ᵇ a₂)
+      ∧ sameDSRef d₁ d₂
+  sameSpec (datasourceSpec p₁) (datasourceSpec p₂) = does (p₁ ≟ˢ p₂)
   sameSpec _ _ = false
 
   -- v è compatibile con vs := per ogni w in vs con lo stesso `name`,

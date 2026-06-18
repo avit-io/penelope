@@ -297,6 +297,12 @@ private
   labelValuesQuery nothing  l = "label_values(" ++ l ++ ")"
   labelValuesQuery (just m) l = "label_values(" ++ m ++ ", " ++ l ++ ")"
 
+  -- uid del datasource di una query variable: assente per `dsDefault`,
+  -- il riferimento `${name}` al picker per `dsVar name`.
+  dsRefUid : DSRef → Maybe String
+  dsRefUid dsDefault = nothing
+  dsRefUid (dsVar n) = just ("${" ++ n ++ "}")
+
   -- Con includeAll la selezione di default è "All" (`$__all`) e le
   -- opzioni la includono in testa, come nel JSON che Grafana esporta.
   allOption : String
@@ -337,14 +343,21 @@ private
         ", \"multi\": " ++ showBool multi                          ++
         ", \"includeAll\": " ++ showBool inc                       ++
         " }"
-  ... | promQuerySpec m lbl multi inc =
+  ... | promQuerySpec m lbl multi inc ds =
         "{ \"name\": \"" ++ escapeJSON (Variable.name v) ++ "\""   ++
         ", \"type\": \"query\""                                    ++
-        ", \"datasource\": { \"type\": \"prometheus\" }"           ++
+        ", \"datasource\": { \"type\": \"prometheus\""
+          ++ dsUidField (dsRefUid ds) ++ " }"                      ++
         ", \"query\": \"" ++ escapeJSON (labelValuesQuery m lbl) ++ "\"" ++
         ", \"refresh\": 2"                                         ++
         ", \"multi\": " ++ showBool multi                          ++
         ", \"includeAll\": " ++ showBool inc                       ++
+        " }"
+  ... | datasourceSpec pluginId =
+        "{ \"name\": \"" ++ escapeJSON (Variable.name v) ++ "\""   ++
+        ", \"type\": \"datasource\""                               ++
+        ", \"query\": \"" ++ escapeJSON pluginId ++ "\""           ++
+        ", \"current\": {}"                                        ++
         " }"
 
   joinVars : List Variable → String
