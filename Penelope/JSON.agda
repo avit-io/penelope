@@ -357,6 +357,14 @@ private
         "{ \"name\": \"" ++ escapeJSON (Variable.name v) ++ "\""   ++
         ", \"type\": \"datasource\""                               ++
         ", \"query\": \"" ++ escapeJSON pluginId ++ "\""           ++
+        -- `refresh: 1` (on load): senza, Grafana non popola la lista dei
+        -- datasource e il picker resta vuoto/non selezionabile.
+        ", \"refresh\": 1"                                         ++
+        ", \"hide\": 0"                                            ++
+        ", \"multi\": false"                                       ++
+        ", \"includeAll\": false"                                  ++
+        ", \"regex\": \"\""                                        ++
+        ", \"options\": []"                                        ++
         ", \"current\": {}"                                        ++
         " }"
 
