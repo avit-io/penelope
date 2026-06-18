@@ -25,7 +25,7 @@ open import Penelope.Query
 
 open import Data.Bool   using (Bool)
 open import Data.Maybe  using (Maybe; just; nothing)
-open import Data.String using (String)
+open import Data.String using (String; _++_)
 
 record Datasource : Set₂ where
   field
@@ -43,3 +43,21 @@ record Datasource : Set₂ where
 -- a `nothing`): `setUid "PBFA97CFB590B2093" (prometheus M)`.
 setUid : String → Datasource → Datasource
 setUid u d = record d { uid = just u }
+
+-- ─── Datasource scelto all'import (`__inputs`) ───────────────────────
+--
+-- Un `DSInput` dichiara un datasource che Grafana fa SCEGLIERE ALL'IMPORT
+-- (pattern delle dashboard condivisibili): all'import compare un selettore
+-- "scegli il datasource <label>", poi `${name}` viene sostituito ovunque.
+-- Nessun menù resta sulla dashboard. Pannelli/variabili lo referenziano
+-- via `inputRef` (es. uid `${DS_PROMETHEUS}`).
+record DSInput : Set where
+  constructor mkDSInput
+  field
+    name     : String   -- token referenziato: es. "DS_PROMETHEUS"
+    label    : String   -- etichetta nel dialog d'import: es. "Prometheus"
+    pluginId : String   -- es. "prometheus"
+
+-- Riferimento `${name}` da usare come uid (con setUid, o nei DSRef).
+inputRef : DSInput → String
+inputRef i = "${" ++ DSInput.name i ++ "}"

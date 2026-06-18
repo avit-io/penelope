@@ -83,6 +83,21 @@ mkPanel1 {ds} {k} t q {ok} = record
   ; viz     = defaultViz k
   }
 
+-- Panel MULTI-TARGET: una query per "riga". Grafana, dato uno stat (o
+-- bargauge) con più serie, le dispone come righe — ciascuna col proprio
+-- valore e sparkline, colorata dalle soglie. È il "widget" compatto: più
+-- metriche in UN riquadro. I Target portano il proprio `ok`, quindi è
+-- datasource-generico senza vincoli aggiuntivi. (Unità unica per panel:
+-- le righe condividono `config`/`viz`; per unità diverse → panel diversi.)
+mkPanelT : ∀ {ds k} → (title : String) → List⁺ (Target ds k) → Panel ds k
+mkPanelT {k = k} t ts = record
+  { title   = t
+  ; targets = ts
+  ; vars    = []
+  ; config  = noConfig
+  ; viz     = defaultViz k
+  }
+
 -- Esistenziale sul datasource (e sul kind).
 record AnyPanel : Set₂ where
   constructor anyPanel
@@ -109,6 +124,7 @@ record Dashboard : Set₂ where
   field
     title     : String
     uid       : String
+    inputs    : List DSInput   -- datasource scelti all'import (`__inputs`)
     variables : List Variable
     viewport  : Rect
     tiling    : TilingOf AnyPanel viewport
@@ -126,6 +142,24 @@ mkDashboard : (title uid : String) (variables : List Variable)
 mkDashboard t u vs vp tl {wf} = record
   { title     = t
   ; uid       = u
+  ; inputs    = []
+  ; variables = vs
+  ; viewport  = vp
+  ; tiling    = tl
+  ; wf        = wf
+  }
+
+-- Come mkDashboard ma con datasource `__inputs` da scegliere all'import.
+mkDashboardWithInputs : (title uid : String) (inputs : List DSInput)
+            → (variables : List Variable)
+            → (viewport : Rect) → (tl : TilingOf AnyPanel viewport)
+            → {wf : T (varsConsistentB
+                        (collectPanelVars tl ++ variables))}
+            → Dashboard
+mkDashboardWithInputs t u ins vs vp tl {wf} = record
+  { title     = t
+  ; uid       = u
+  ; inputs    = ins
   ; variables = vs
   ; viewport  = vp
   ; tiling    = tl

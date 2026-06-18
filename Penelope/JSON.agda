@@ -376,6 +376,28 @@ private
   renderTemplating : List Variable → String
   renderTemplating vars = "{ \"list\": [" ++ joinVars vars ++ "] }"
 
+  -- ─── `__inputs`: datasource da scegliere all'import ───────────────
+  renderDSInput : DSInput → String
+  renderDSInput i =
+    "{ \"name\": \"" ++ escapeJSON (DSInput.name i) ++ "\""
+      ++ ", \"label\": \"" ++ escapeJSON (DSInput.label i) ++ "\""
+      ++ ", \"description\": \"\""
+      ++ ", \"type\": \"datasource\""
+      ++ ", \"pluginId\": \"" ++ escapeJSON (DSInput.pluginId i) ++ "\""
+      ++ ", \"pluginName\": \"" ++ escapeJSON (DSInput.label i) ++ "\" }"
+
+  joinDSInputs : List DSInput → String
+  joinDSInputs []           = ""
+  joinDSInputs (i ∷ [])     = renderDSInput i
+  joinDSInputs (i ∷ j ∷ is) = renderDSInput i ++ ", " ++ joinDSInputs (j ∷ is)
+
+  -- Linea `__inputs` (con virgola e newline); vuota se non ci sono input,
+  -- così le dashboard senza input restano invariate.
+  renderInputs : List DSInput → String
+  renderInputs []       = ""
+  renderInputs (i ∷ is) =
+    "  \"__inputs\": [" ++ joinDSInputs (i ∷ is) ++ "]," ++ nl
+
 -- ─────────────────────────────────────────────────────────────────────
 -- Dedup per nome (prima occorrenza vince) sulla concatenazione dei
 -- riferimenti raccolti dai panel + extras della dashboard. La raccolta
@@ -408,6 +430,7 @@ renderDashboard d =
   let panels = walk (Dashboard.tiling d)
       tmpl   = renderTemplating (dashboardVariables d) in
     "{"                                                ++ nl ++
+    renderInputs (Dashboard.inputs d)                  ++
     "  \"title\": \"" ++ escapeJSON (Dashboard.title d) ++ "\"," ++ nl ++
     "  \"uid\": \"" ++ escapeJSON (Dashboard.uid d) ++ "\","     ++ nl ++
     "  \"schemaVersion\": 39,"                          ++ nl ++
